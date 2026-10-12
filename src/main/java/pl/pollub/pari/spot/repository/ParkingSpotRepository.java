@@ -1,0 +1,70 @@
+package pl.pollub.pari.spot.repository;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+import pl.pollub.pari.spot.domain.ParkingSpot;
+
+import java.time.Instant;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+public interface ParkingSpotRepository extends JpaRepository<ParkingSpot, UUID> {
+
+    List<ParkingSpot> findByOwnerIdOrderByCreatedAtDesc(UUID ownerId);
+
+    Optional<ParkingSpot> findByIdAndOwnerId(UUID id, UUID ownerId);
+
+    /** One row of a map search: the spot id and its distance from the search point. */
+    interface SpotDistance {
+        UUID getId();
+
+        double getDistanceMeters();
+    }
+
+    /**
+     * Map search (F11, F12): active spots within a radius, optionally cheaper than a price, only verified ones, and free in
+     * the requested time range. Premium owners come first, then the nearest. Availability rules and blocked slots are not
+     * checked here, the service does that on the returned candidates.
+     */
+    @Query(value = """
+            SELECT s.id AS "id",
+                   ST_Distance(s.location, CAST(ST_SetSRID(ST_MakePoint(:lng, :lat), 4326) AS geography)) AS "distanceMeters"
+            FROM parking_spots s
+            WHERE s.status = 'ACTIVE'
+              AND ST_DWithin(s.location, CAST(ST_SetSRID(ST_MakePoint(:lng, :lat), 4326) AS geography), :radiusMeters)
+              AND s.hourly_price_minor <= :maxPriceMinor
+              AND (s.is_verified OR NOT :onlyVerified)
+              AND NOT EXISTS (
+                    SELECT 1 FROM reservations r
+                    WHERE r.spot_id = s.id
+                      AND r.status IN ('PENDING_PAYMENT', 'PENDING_APPROVAL', 'CONFIRMED', 'IN_PROGRESS')
+                      AND tstzrange(r.starts_at, r.ends_at, '[)') && tstzrange(:start, :end, '[)'))
+            ORDER BY CASE WHEN EXISTS (
+                           SELECT 1 FROM premium_subscriptions p
+                           WHERE p.owner_id = s.owner_id AND p.status IN ('ACTIVE', 'CANCELLED') AND p.expires_at > now())
+                     THEN 0 ELSE 1 END,
+                     "distanceMeters"
+            LIMIT :limit OFFSET :offset
+            """, nativeQuery = true)
+    List<SpotDistance> searchNearby(@Param("lat") double lat,
+                                    @Param("lng") double lng,
+                                    @Param("radiusMeters") double radiusMeters,
+                                    @Param("maxPriceMinor") long maxPriceMinor,
+                                    @Param("onlyVerified") boolean onlyVerified,
+                                    @Param("start") Instant start,
+                                    @Param("end") Instant end,
+                                    @Param("limit") int limit,
+                                    @Param("offset") int offset);
+
+    /** Convenience wrapper: {@code null} filters mean "no restriction". */
+    default List<SpotDistance> search(double lat, double lng, double radiusMeters, Long maxPriceMinor,
+                                      boolean onlyVerified, Instant start, Instant end, int limit, int offset) {
+        // A range in 1970 never overlaps a reservation, so it disables the time filter.
+        Instant from = start != null && end != null ? start : Instant.EPOCH;
+        Instant to = start != null && end != null ? end : Instant.EPOCH.plusSeconds(1);
+        return searchNearby(lat, lng, radiusMeters, maxPriceMinor != null ? maxPriceMinor : Long.MAX_VALUE,
+                onlyVerified, from, to, limit, offset);
+    }
+}
