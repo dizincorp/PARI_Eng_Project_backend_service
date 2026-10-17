@@ -71,12 +71,15 @@ New code goes into the module that owns the concept. Do not create a module for 
 - Test names describe behaviour (`cancelIsPossibleBeforeCheckInOnly`), not methods. Use AssertJ.
 - Tests must not depend on order, wall-clock time or leftover data. DB tests roll back automatically.
 
-## Git workflow (enforced by GitHub)
+## Git workflow
 
-- `main` is protected: no direct pushes. Work on a branch, open a pull request, a code owner approves, squash merge.
+- **Every change reaches `main` through a pull request, whoever makes it: human or AI agent.** Nobody commits or pushes directly to `main`. GitHub currently blocks only deleting `main` and force-pushing to it; it does not block direct pushes, so this rule depends on discipline. Do not use that gap, not even for a one-line documentation fix.
+- Work on a branch, push it, open a PR into `main`, squash merge.
 - Branch names: `feature/<short-desc>`, `fix/<short-desc>`, `docs/<short-desc>`, `chore/<short-desc>` (optionally with the Jira key: `feature/PARI-123-short-desc`).
 - Commit messages: `type(scope): subject` (types: feat, fix, docs, test, refactor, build, chore), imperative, under 72 characters, body explains why. Reference requirement ids (F17, NF04) and the Jira key when relevant.
-- **Agents must not**: push to `main`, merge or approve pull requests, force-push, rewrite published history, change branch protection or `.github/CODEOWNERS`, or bypass hooks/checks. Open the PR and stop; a human reviews and merges.
+- **Agents work autonomously inside the task they were given.** Create the branch, implement the change, write the tests, run `./gradlew build`, push, and open the PR with a complete description (what and why, how it was tested, assumptions and placeholders, what was not done). Do not stop to ask permission for each of these steps.
+- **Merging:** an agent merges its own PR only when the person who gave the task said so for that task, and only after CI is green (or after stating exactly which check could not run and why). Use squash merge. Without that instruction, leave the PR open for a human.
+- **Agents must not**: push to `main`, force-push or rewrite published history, change rulesets, branch protection or `.github/CODEOWNERS`, reopen or delete pull requests and branches that someone else closed, or bypass hooks and checks. If a PR was closed by a human, ask before opening another one for the same work.
 - Never commit `.idea/`, `build/`, `.gradle/`, `.env` files or generated artifacts.
 
 ## Documentation
@@ -87,4 +90,4 @@ New code goes into the module that owns the concept. Do not create a module for 
 
 ## When unsure
 
-Ask a human when a requirement is ambiguous, a business value is missing, or an action is hard to undo (deleting data, changing a migration already merged, changing repository settings). State assumptions in the PR description.
+Ask a human when a requirement is ambiguous, a business value is missing, or an action is hard to undo (deleting data, changing a migration already merged, changing repository settings). Otherwise decide, proceed, and state the assumptions in the PR description.
