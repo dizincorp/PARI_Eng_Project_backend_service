@@ -17,7 +17,7 @@ The data layer is implemented: Flyway schema, JPA entities with their business r
 
 ## Requirements
 
-- JDK 25 (the Gradle toolchain is set to 25; Gradle finds an installed JDK 25 automatically)
+- JDK 21 (the Gradle toolchain is set to 21; Gradle finds an installed JDK 21 automatically, for example one installed by IntelliJ IDEA)
 - Docker (tests start PostgreSQL + PostGIS with Testcontainers; local development uses `docker-compose.yml`)
 
 ## Run the tests
