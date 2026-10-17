@@ -73,12 +73,13 @@ New code goes into the module that owns the concept. Do not create a module for 
 
 ## Git workflow
 
-- **Every change reaches `main` through a pull request, whoever makes it: human or AI agent.** Nobody commits or pushes directly to `main`. GitHub currently blocks only deleting `main` and force-pushing to it; it does not block direct pushes, so this rule depends on discipline. Do not use that gap, not even for a one-line documentation fix.
+- **Changes reach `main` through a pull request.** GitHub enforces this for everyone except the repository owner (organization admin): other contributors cannot push to `main`, and their PRs need one approval including a code owner. Nobody can delete `main` or force-push to it.
+- **AI agents always use a pull request**, even when they run with the owner's credentials, which would technically allow a direct push or a merge without approval. Never push to `main` yourself, not even for a one-line documentation fix, unless the owner told you to for that specific change.
 - Work on a branch, push it, open a PR into `main`, squash merge.
 - Branch names: `feature/<short-desc>`, `fix/<short-desc>`, `docs/<short-desc>`, `chore/<short-desc>` (optionally with the Jira key: `feature/PARI-123-short-desc`).
 - Commit messages: `type(scope): subject` (types: feat, fix, docs, test, refactor, build, chore), imperative, under 72 characters, body explains why. Reference requirement ids (F17, NF04) and the Jira key when relevant.
 - **Agents work autonomously inside the task they were given.** Create the branch, implement the change, write the tests, run `./gradlew build`, push, and open the PR with a complete description (what and why, how it was tested, assumptions and placeholders, what was not done). Do not stop to ask permission for each of these steps.
-- **Merging:** an agent merges its own PR only when the person who gave the task said so for that task, and only after CI is green (or after stating exactly which check could not run and why). Use squash merge. Without that instruction, leave the PR open for a human.
+- **Merging:** an agent merges its own PR only when the person who gave the task said so for that task, and only after CI is green (or after stating exactly which check could not run and why). Use squash merge. Without that instruction, leave the PR open; the owner can merge it without waiting for an approval, other reviewers use the normal approval.
 - **Agents must not**: push to `main`, force-push or rewrite published history, change rulesets, branch protection or `.github/CODEOWNERS`, reopen or delete pull requests and branches that someone else closed, or bypass hooks and checks. If a PR was closed by a human, ask before opening another one for the same work.
 - Never commit `.idea/`, `build/`, `.gradle/`, `.env` files or generated artifacts.
 

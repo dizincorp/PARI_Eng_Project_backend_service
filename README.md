@@ -39,4 +39,4 @@ The `local` profile contains a development-only encryption key. In every other e
 
 ## Workflow
 
-Every change goes through a pull request, whoever makes it (team member or AI agent); nobody commits to `main` directly. Create a branch, push it, open a PR, get a review, squash merge. Refer to requirement ids (F17, NF04, ...) in commits and PRs. Details: [CONTRIBUTING.md](CONTRIBUTING.md); AI agents also read [AGENTS.md](AGENTS.md).
+Contributors work through pull requests: create a branch, push it, open a PR, get a code owner's approval, squash merge. GitHub blocks direct pushes to `main` for everyone except the repository owner. AI agents always open a PR. Refer to requirement ids (F17, NF04, ...) in commits and PRs. Details: [CONTRIBUTING.md](CONTRIBUTING.md); AI agents also read [AGENTS.md](AGENTS.md).

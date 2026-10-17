@@ -17,16 +17,23 @@ Rules for everyone who changes this repository, humans and AI agents alike. AI a
 
 ## 2. The flow: branch, pull request, review, merge
 
-**Every contributor makes a pull request: team members, maintainers and AI coding agents alike.** Nobody commits or pushes directly to `main`, and there are no exceptions for small or documentation-only changes.
+**Contributors make pull requests: team members and AI coding agents alike.** GitHub enforces this with two rulesets on `main`:
 
-GitHub currently blocks only deleting `main` and force-pushing to it (ruleset *main restrictions*). It no longer blocks direct pushes or requires approvals, so the pull request rule is a team agreement that everyone must keep. If the team wants it enforced again, re-enable "Require a pull request before merging" in the ruleset.
+| Ruleset | Effect |
+| --- | --- |
+| *main restrictions* | Nobody can delete `main` or force-push to it. |
+| *protect-main* | Direct pushes are blocked. A PR needs one approval that includes a code owner, resolved review conversations, and is merged with squash. |
+
+**The repository owner (organization admin) is exempt from *protect-main*.** The owner can merge a PR without waiting for an approval (nobody can approve their own PR) and may push to `main` directly. Use the exemption for your own work and for urgent fixes; when a change affects other people's work, open a PR anyway and ask for a review. Other contributors cannot push to `main`, and cannot merge a PR without a code owner's approval.
+
+AI agents follow the stricter rule: they always open a PR (section 9), even when they run with the owner's credentials.
 
 1. **Pick a task** from the Jira board (project key `PARI`). Titles follow `[Part] Current task or problem`, for example `[Backend/Auth] Add refresh token rotation`.
 2. **Branch from an up-to-date `main`**: `git switch main && git pull && git switch -c feature/PARI-123-short-desc`.
 3. **Commit** in small logical steps (section 3).
 4. **Push and open a pull request** into `main`. Fill in the PR template. One concern per PR; keep it small enough to review in 20 minutes.
 5. **CI must be green** (build and tests).
-6. **Get a review.** A teammate (ideally a code owner, see `.github/CODEOWNERS`) reads the diff, and all review conversations are resolved. When no other reviewer is available, the author may merge their own PR after re-reading the whole diff once more as a reviewer would.
+6. **Get an approval from a code owner** (see `.github/CODEOWNERS`) and resolve all review conversations. New pushes dismiss earlier approvals. The owner, who is exempt, merges their own PRs after re-reading the diff as a reviewer would.
 7. **Squash and merge.** Use squash merge only, so `main` has one commit per PR with the PR title as its message. Delete the branch afterwards.
 
 Draft PRs are welcome for early feedback.
@@ -96,7 +103,7 @@ See [docs/README.md](docs/README.md). In short: the Polish design document is au
 Agents follow [AGENTS.md](AGENTS.md). In short:
 
 - Agents may implement a task on their own: branch, code, tests, `./gradlew build`, push, and a complete pull request description.
-- **Agents make pull requests like everyone else.** They never push to `main`.
+- **Agents always make pull requests.** They never push to `main`, even if the credentials they run with would allow it.
 - An agent merges its own PR only if the person who gave the task said so, and only after CI is green.
 - Agents do not change repository settings, add dependencies silently, invent business values, or reopen what a human closed.
 - The person who asked for the change is responsible for it: review AI-written code as carefully as any other code, especially migrations, money and security.
