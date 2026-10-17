@@ -1,0 +1,24 @@
+spring:
+  application:
+    name: pari-backend
+  datasource:
+    url: ${PARI_DB_URL:jdbc:postgresql://localhost:5432/pari}
+    username: ${PARI_DB_USER:pari}
+    password: ${PARI_DB_PASSWORD:pari}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate   # the schema is owned by Flyway; Hibernate only checks it matches the entities
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+pari:
+  security:
+    # Base64 of a 32-byte key (AES-256). Required; never commit a real key.
+    # Generate one with: openssl rand -base64 32
+    data-encryption-key: ${PARI_DATA_KEY:}
