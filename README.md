@@ -2,7 +2,7 @@
 
 Backend of PARI, a portal for sharing and reserving private parking spaces (engineering degree project, Lublin University of Technology). Java, Spring Boot, PostgreSQL + PostGIS.
 
-Documentation lives in Confluence (space *My Software Team*, page *PARI project documentation*). Diagrams are in [docs/diagrams](docs/diagrams) once merged.
+Documentation lives in Confluence (space *My Software Team*, page *PARI project documentation*). Repository documentation, ADRs and diagrams are in [docs](docs) ([docs/diagrams](docs/diagrams)); contributor rules are in [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md).
 
 ## Current state
 
