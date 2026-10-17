@@ -6,12 +6,15 @@ Documentation lives in Confluence (space *My Software Team*, page *PARI project 
 
 ## Current state
 
-The data layer is implemented: Flyway schema, JPA entities with their business rules, Spring Data repositories and tests. There is no REST API yet.
+The data layer is implemented (Flyway schema, JPA entities with their business rules, repositories), and the main flow runs on top of it: **creating a parking space, searching for one, reserving it and paying for it**. Payments go through a **mock gateway** (no real money, see [ADR 0004](docs/adr/0004-payment-gateway-port-with-mock.md)).
+
+Not implemented yet: authentication (callers are identified by a temporary `X-User-Id` header, never expose this outside development), check-in and check-out, overstay penalties, the payout release job, reviews, support, verification workflow, notifications, premium, and the real Stripe adapter.
 
 | Part | Where |
 | --- | --- |
 | Schema (Flyway) | `src/main/resources/db/migration/V1__init_schema.sql` |
 | Entities and repositories, one package per module | `src/main/java/pl/pollub/pari/<module>/{domain,repository}` |
+| Services (business flow) and REST controllers | `src/main/java/pl/pollub/pari/<module>/{service,web}` |
 | Shared value objects, encryption, audit log | `src/main/java/pl/pollub/pari/common` |
 | Tests | `src/test/java` |
 
