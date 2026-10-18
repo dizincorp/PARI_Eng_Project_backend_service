@@ -20,6 +20,8 @@ repositories {
 dependencies {
     // REST API
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+    // OpenAPI document (/v3/api-docs) and Swagger UI (/swagger-ui.html); not managed by Spring Boot, hence the explicit version
+    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.1'
 
     // data layer
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'

@@ -40,6 +40,10 @@ SPRING_PROFILES_ACTIVE=local ./gradlew bootRun
 
 The `local` profile contains a development-only encryption key. In every other environment set `PARI_DATA_KEY` (base64 of 32 random bytes, for example `openssl rand -base64 32`) and `PARI_DB_URL`, `PARI_DB_USER`, `PARI_DB_PASSWORD`.
 
+## API documentation (Swagger UI)
+
+With the app running, open <http://localhost:8080/swagger-ui.html> to browse and try every endpoint. The raw OpenAPI document is at `/v3/api-docs`. There is no real authentication yet: click **Authorize** and enter a user UUID, which is sent as the temporary `X-User-Id` header.
+
 ## Workflow
 
 Contributors work through pull requests: create a branch, push it, open a PR, get a code owner's approval, squash merge. GitHub blocks direct pushes to `main` for everyone except the repository owner. AI agents always open a PR. Refer to requirement ids (F17, NF04, ...) in commits and PRs. Details: [CONTRIBUTING.md](CONTRIBUTING.md); AI agents also read [AGENTS.md](AGENTS.md).
