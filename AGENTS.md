@@ -6,7 +6,7 @@ Instructions for AI coding agents (Claude Code, Codex, Copilot, Cursor, Gemini a
 
 PARI is a portal where private owners rent out parking spaces and drivers find, reserve, pay for and check in to them. This repository is the **backend service** of an engineering degree project (Lublin University of Technology, team of three). Product requirements are identified as F01-F25 and NF01-NF15 and live in the Confluence space *My Software Team* (page *PARI project documentation*). The Polish design document is authoritative; Confluence pages are the working copy.
 
-**Current state:** the data layer exists (Flyway schema, JPA entities, repositories, tests). There is **no REST API, security or payment integration yet**; they are planned (Spring Web MVC, Spring Security with JWT, Stripe, S3-compatible storage, SSE for live spot status). Do not describe planned parts as existing.
+**Current state:** the data layer exists (Flyway schema, JPA entities, repositories, tests), and so do services and REST controllers for creating, searching and reserving parking spaces, with payments behind a **mock** gateway (ADR 0004). There is **no security and no real payment provider yet**: callers are identified by the temporary `X-User-Id` header. Planned: Spring Security with JWT, Stripe, S3-compatible storage, SSE for live spot status, check-in/out, payout job. Do not describe planned parts as existing.
 
 ## Stack
 
@@ -33,6 +33,8 @@ src/main/java/pl/pollub/pari/
   auth/ user/ spot/ availability/ reservation/ payment/ review/ support/ verification/ premium/ notification/
     domain/      JPA entities, enums, embeddables (business rules of one object live here)
     repository/  Spring Data repositories
+    service/     use cases: transactions, cross-object rules, read models returned to controllers
+    web/         REST controllers and request records (only for modules with an API)
 src/main/resources/db/migration/   Flyway migrations (V1__init_schema.sql, ...)
 src/test/java/                     mirrors main; support/DbTestBase is the base for DB tests
 docs/                              repo documentation (see docs/README.md), docs/diagrams (Mermaid), docs/adr (decisions)
