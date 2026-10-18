@@ -33,10 +33,23 @@ Unit tests of the domain rules run without Docker; the repository tests need a r
 
 ## Run against a local database
 
+Bash:
+
 ```bash
 docker compose up -d
 SPRING_PROFILES_ACTIVE=local ./gradlew bootRun
 ```
+
+PowerShell (it has no `VAR=value command` syntax):
+
+```powershell
+docker compose up -d
+$env:SPRING_PROFILES_ACTIVE = "local"; .\gradlew.bat bootRun
+```
+
+Then open http://localhost:8080/swagger-ui.html.
+
+To run the whole system from published images instead (database, backend, later front), use the `PARI_Eng_Project_infra` repository.
 
 The `local` profile also loads demo data (`src/main/resources/db/dev`): an owner, a driver, a vehicle, a test card and four active spots in Lublin. The ids are listed at the top of `V1000__demo_data.sql` (for example driver `00000000-0000-0000-0000-000000000002` for `X-User-Id`; book with token `pm_card_visa`). To load it elsewhere set `SPRING_FLYWAY_LOCATIONS=classpath:db/migration,classpath:db/dev`; never do this in production.
 
