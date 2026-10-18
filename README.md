@@ -38,6 +38,8 @@ docker compose up -d
 SPRING_PROFILES_ACTIVE=local ./gradlew bootRun
 ```
 
+The `local` profile also loads demo data (`src/main/resources/db/dev`): an owner, a driver, a vehicle, a test card and four active spots in Lublin. The ids are listed at the top of `V1000__demo_data.sql` (for example driver `00000000-0000-0000-0000-000000000002` for `X-User-Id`; book with token `pm_card_visa`). To load it elsewhere set `SPRING_FLYWAY_LOCATIONS=classpath:db/migration,classpath:db/dev`; never do this in production.
+
 The `local` profile contains a development-only encryption key. In every other environment set `PARI_DATA_KEY` (base64 of 32 random bytes, for example `openssl rand -base64 32`) and `PARI_DB_URL`, `PARI_DB_USER`, `PARI_DB_PASSWORD`.
 
 ## API documentation (Swagger UI)

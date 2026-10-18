@@ -3,3 +3,8 @@ pari:
   security:
     # Development-only key, NOT a secret. Never use it outside a developer machine.
     data-encryption-key: ZGV2LW9ubHkta2V5LWZvci1wYXJpLWxvY2FsLXVzZSE=
+
+spring:
+  flyway:
+    # also load demo data (users, spots) from db/dev; never add this location outside development
+    locations: classpath:db/migration,classpath:db/dev
