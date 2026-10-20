@@ -57,6 +57,25 @@ public class PaymentService {
         return new ChargeOutcome(payment, result.succeeded(), result.failureReason());
     }
 
+    /**
+     * Charges the overstay penalty (F19) to the driver's saved payment method. The result is always recorded as a
+     * PENALTY payment; when there is no payment method or the provider declines, it is saved as FAILED so support can
+     * follow up. Never throws, so the check-out itself is not blocked.
+     */
+    @Transactional
+    public Payment chargePenalty(Reservation reservation, Money amount, String paymentMethodToken) {
+        PaymentGateway.Result result = paymentMethodToken == null
+                ? PaymentGateway.Result.failure("No payment method on file")
+                : gateway.charge(amount, paymentMethodToken, "penalty-" + reservation.getId());
+        Payment payment = new Payment(reservation, PaymentType.PENALTY, amount, result.providerRef());
+        if (result.succeeded()) {
+            payment.markSucceeded();
+        } else {
+            payment.markFailed();
+        }
+        return payments.save(payment);
+    }
+
     /** Schedules the owner's payout: spot cost minus commission, released {@code payout_delay_hours} after the end (F17, F18). */
     @Transactional
     public Payout schedulePayout(Reservation reservation) {

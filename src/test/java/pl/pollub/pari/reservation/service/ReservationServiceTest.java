@@ -16,11 +16,14 @@ import pl.pollub.pari.payment.domain.PayoutStatus;
 import pl.pollub.pari.payment.gateway.MockPaymentGateway;
 import pl.pollub.pari.payment.repository.PaymentRepository;
 import pl.pollub.pari.payment.repository.PayoutRepository;
+import pl.pollub.pari.common.domain.Money;
+import pl.pollub.pari.reservation.domain.Reservation;
 import pl.pollub.pari.reservation.domain.ReservationStatus;
 import pl.pollub.pari.reservation.service.ReservationService.BookCommand;
 import pl.pollub.pari.reservation.service.ReservationService.BookingResult;
 import pl.pollub.pari.spot.domain.ParkingSpot;
 import pl.pollub.pari.support.ServiceTestBase;
+import pl.pollub.pari.user.domain.PaymentMethod;
 import pl.pollub.pari.user.domain.Role;
 import pl.pollub.pari.user.domain.User;
 import pl.pollub.pari.user.domain.Vehicle;
@@ -230,6 +233,88 @@ class ReservationServiceTest extends ServiceTestBase {
 
         assertThat(quote.total().amountMinor()).isEqualTo(2100);
         assertThat(book(driver, T10, T12, VISA).reservation().total()).isEqualByComparingTo(quote.total().toDecimal());
+    }
+
+    @Test
+    void checkInNeedsTheIssuedPinOrQrTokenAndARunningPeriod() {
+        ReservationView running = confirmed(NOW.minusSeconds(3600), NOW.plusSeconds(3600));
+
+        assertThatThrownBy(() -> service.checkIn(driver.getId(), running.id(), "0000x", null)).isInstanceOf(ForbiddenException.class);
+        assertThatThrownBy(() -> service.checkIn(driver.getId(), running.id(), null, null)).isInstanceOf(ForbiddenException.class);
+        assertThatThrownBy(() -> service.checkIn(owner.getId(), running.id(), running.pinCode(), null)).isInstanceOf(NotFoundException.class);
+
+        ReservationView checkedIn = service.checkIn(driver.getId(), running.id(), running.pinCode(), null);
+        assertThat(checkedIn.status()).isEqualTo(ReservationStatus.IN_PROGRESS);
+        assertThat(checkedIn.checkInAt()).isEqualTo(NOW);
+        assertThat(service.activeSession(driver.getId()).id()).isEqualTo(running.id());
+    }
+
+    @Test
+    void checkInWorksWithTheQrTokenAndNotBeforeTheStart() {
+        ReservationView future = book(driver, T10, T12, VISA).reservation();
+        assertThatThrownBy(() -> service.checkIn(driver.getId(), future.id(), future.pinCode(), null))
+                .hasMessageContaining("check-in is possible only between");
+
+        ReservationView running = confirmed(NOW.minusSeconds(60), NOW.plusSeconds(3600));
+        assertThat(service.checkIn(driver.getId(), running.id(), null, running.qrToken()).status())
+                .isEqualTo(ReservationStatus.IN_PROGRESS);
+    }
+
+    @Test
+    void checkingOutOnTimeCostsOnlyTheBookedSpotCost() {
+        ReservationView running = confirmed(NOW.minusSeconds(3600), NOW.plusSeconds(3600));
+        service.checkIn(driver.getId(), running.id(), running.pinCode(), null);
+
+        ReservationView done = service.checkOut(driver.getId(), running.id());
+
+        assertThat(done.status()).isEqualTo(ReservationStatus.COMPLETED);
+        assertThat(done.checkOutAt()).isEqualTo(NOW);
+        assertThat(done.overstayPenalty()).isNull();
+        assertThat(done.finalCost()).isEqualByComparingTo("20.00");
+        assertThatThrownBy(() -> service.activeSession(driver.getId())).isInstanceOf(NotFoundException.class);
+    }
+
+    @Test
+    void overstayingIsChargedAPenaltyToTheDefaultPaymentMethod() {
+        PaymentMethod card = new PaymentMethod(driver, "pm_card_visa", "visa", "4242", 12, 2030);
+        card.markDefault(true);
+        em.persist(card);
+        // reserved until 90 minutes ago; rate 10.00/h x 1.50 x 1.5 h = 22.50
+        Reservation overdue = persistReservation(spot, driver, vehicle, NOW.minusSeconds(3 * 3600), NOW.minusSeconds(90 * 60));
+        overdue.markPaid(true);
+        overdue.checkIn(NOW.minusSeconds(2 * 3600));
+        em.flush();
+
+        ReservationView done = service.checkOut(driver.getId(), overdue.getId());
+
+        assertThat(done.overstayPenalty()).isEqualByComparingTo("22.50");
+        assertThat(done.finalCost()).isEqualByComparingTo(overdue.getSpotCost().add(Money.pln(2250)).toDecimal());
+        assertThat(payments.findByReservationIdOrderByCreatedAtAsc(overdue.getId()))
+                .extracting(Payment::getType, Payment::getStatus)
+                .containsExactly(tuple(PaymentType.PENALTY, PaymentStatus.SUCCEEDED));
+    }
+
+    @Test
+    void aPenaltyThatCannotBeChargedIsRecordedAsFailedAndCheckOutStillCompletes() {
+        Reservation overdue = persistReservation(spot, driver, vehicle, NOW.minusSeconds(3 * 3600), NOW.minusSeconds(3600));
+        overdue.markPaid(true);
+        overdue.checkIn(NOW.minusSeconds(2 * 3600));
+        em.flush();
+
+        ReservationView done = service.checkOut(driver.getId(), overdue.getId());
+
+        assertThat(done.status()).isEqualTo(ReservationStatus.COMPLETED);
+        assertThat(payments.findByReservationIdOrderByCreatedAtAsc(overdue.getId()))
+                .extracting(Payment::getType, Payment::getStatus)
+                .containsExactly(tuple(PaymentType.PENALTY, PaymentStatus.FAILED));
+    }
+
+    /** A paid, confirmed reservation for the given period (booking itself only accepts future starts). */
+    private ReservationView confirmed(Instant start, Instant end) {
+        Reservation reservation = persistReservation(spot, driver, vehicle, start, end);
+        reservation.markPaid(true);
+        em.flush();
+        return ReservationView.of(reservation, driver.getId());
     }
 
     private BookingResult book(User who, Instant start, Instant end, String token) {

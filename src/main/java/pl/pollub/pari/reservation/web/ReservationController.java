@@ -50,6 +50,10 @@ public class ReservationController {
     public record ReasonRequest(String reason) {
     }
 
+    /** Give the PIN or the QR token that was issued at booking. */
+    public record CheckInRequest(String pinCode, String qrToken) {
+    }
+
     private final ReservationService reservations;
 
     public ReservationController(ReservationService reservations) {
@@ -91,6 +95,12 @@ public class ReservationController {
         return reservations.listForOwner(userId, spotId, status, page, Math.min(Math.max(size, 1), 50));
     }
 
+    /** The driver's running parking session; 404 when there is none. */
+    @GetMapping("/active-session")
+    public ReservationView activeSession(@RequestHeader(SpotController.USER_HEADER) UUID userId) {
+        return reservations.activeSession(userId);
+    }
+
     @GetMapping("/{id}")
     public ReservationView get(@RequestHeader(SpotController.USER_HEADER) UUID userId, @PathVariable UUID id) {
         return reservations.get(userId, id);
@@ -111,5 +121,18 @@ public class ReservationController {
     public ReservationView reject(@RequestHeader(SpotController.USER_HEADER) UUID userId, @PathVariable UUID id,
                                   @RequestBody(required = false) ReasonRequest r) {
         return reservations.reject(userId, id, r == null || r.reason() == null ? "Rejected by owner" : r.reason());
+    }
+
+    /** Starts the parking session. 403 for a wrong code, 409 outside the reserved period. */
+    @PostMapping("/{id}/check-in")
+    public ReservationView checkIn(@RequestHeader(SpotController.USER_HEADER) UUID userId, @PathVariable UUID id,
+                                   @RequestBody CheckInRequest r) {
+        return reservations.checkIn(userId, id, r.pinCode(), r.qrToken());
+    }
+
+    /** Ends the parking session; time over the reserved end is charged as a penalty. */
+    @PostMapping("/{id}/check-out")
+    public ReservationView checkOut(@RequestHeader(SpotController.USER_HEADER) UUID userId, @PathVariable UUID id) {
+        return reservations.checkOut(userId, id);
     }
 }

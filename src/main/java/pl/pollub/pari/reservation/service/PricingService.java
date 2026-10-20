@@ -8,6 +8,7 @@ import pl.pollub.pari.spot.domain.ParkingSpot;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Duration;
 
 /**
  * Price of a reservation (F13, F18). The spot cost is the hourly rate prorated by the minute. The service fee is added to
@@ -26,6 +27,19 @@ public class PricingService {
 
     public PricingService(PlatformSettings settings) {
         this.settings = settings;
+    }
+
+    /**
+     * Fee for staying past the reserved end (F19): the hourly rate times {@code overstay_penalty_multiplier}, prorated by
+     * the started minute.
+     */
+    public Money overstayPenalty(Money hourlyRate, Duration overstay) {
+        if (overstay.isNegative() || overstay.isZero()) {
+            return Money.ZERO;
+        }
+        long startedMinutes = (overstay.toSeconds() + 59) / 60;
+        BigDecimal hours = BigDecimal.valueOf(startedMinutes).divide(MINUTES_PER_HOUR, 10, RoundingMode.HALF_UP);
+        return hourlyRate.multiply(settings.decimal("overstay_penalty_multiplier").multiply(hours));
     }
 
     public Quote quote(ParkingSpot spot, TimeRange range) {
