@@ -30,7 +30,11 @@ public record ReservationView(
         String pinCode,
         String qrToken,
         String cancelReason,
-        Instant createdAt) {
+        Instant createdAt,
+        Instant checkInAt,
+        Instant checkOutAt,
+        BigDecimal overstayPenalty,
+        BigDecimal finalCost) {
 
     public static ReservationView of(Reservation r, UUID viewerId) {
         boolean showAccess = r.getDriver().getId().equals(viewerId)
@@ -54,6 +58,10 @@ public record ReservationView(
                 showAccess ? r.getPinCode() : null,
                 showAccess ? r.getQrToken() : null,
                 r.getCancelReason(),
-                r.getCreatedAt());
+                r.getCreatedAt(),
+                r.getCheckInAt(),
+                r.getCheckOutAt(),
+                r.getOverstayPenalty() == null ? null : r.getOverstayPenalty().toDecimal(),
+                r.getFinalCost() == null ? null : r.getFinalCost().toDecimal());
     }
 }

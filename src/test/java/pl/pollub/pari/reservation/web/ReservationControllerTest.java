@@ -10,6 +10,8 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import pl.pollub.pari.common.exception.ConflictException;
+import pl.pollub.pari.common.exception.ForbiddenException;
+import pl.pollub.pari.common.exception.NotFoundException;
 import pl.pollub.pari.common.web.ApiExceptionHandler;
 import pl.pollub.pari.reservation.domain.ReservationStatus;
 import pl.pollub.pari.reservation.service.ReservationService;
@@ -23,6 +25,7 @@ import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -87,6 +90,40 @@ class ReservationControllerTest {
                 .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("paymentMethodToken")));
     }
 
+    @Test
+    void aWrongAccessCodeAtCheckInReturns403() throws Exception {
+        when(reservations.checkIn(any(), any(), any(), any())).thenThrow(new ForbiddenException("Invalid access code"));
+
+        mvc.perform(post("/api/reservations/" + UUID.randomUUID() + "/check-in").header("X-User-Id", USER)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"pinCode\":\"0000\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.errorCode").value("FORBIDDEN"));
+    }
+
+    @Test
+    void checkInAndCheckOutReturnTheReservation() throws Exception {
+        when(reservations.checkIn(any(), any(), any(), any())).thenReturn(view(ReservationStatus.IN_PROGRESS));
+        when(reservations.checkOut(any(), any())).thenReturn(view(ReservationStatus.COMPLETED));
+        String id = UUID.randomUUID().toString();
+
+        mvc.perform(post("/api/reservations/" + id + "/check-in").header("X-User-Id", USER)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"pinCode\":\"4921\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("IN_PROGRESS"));
+        mvc.perform(post("/api/reservations/" + id + "/check-out").header("X-User-Id", USER))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("COMPLETED"));
+    }
+
+    @Test
+    void noActiveSessionReturns404() throws Exception {
+        when(reservations.activeSession(any())).thenThrow(new NotFoundException("No active parking session"));
+
+        mvc.perform(get("/api/reservations/active-session").header("X-User-Id", USER))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("No active parking session"));
+    }
+
     private static String body(String token) {
         return """
                 {"spotId":"%s","vehicleId":"%s","start":"2030-01-07T10:00:00Z","end":"2030-01-07T12:00:00Z","paymentMethodToken":"%s"}
@@ -97,7 +134,7 @@ class ReservationControllerTest {
         return new ReservationView(UUID.randomUUID(), "RSV-20291201-ABCDE", SPOT, "Garage", USER, VEHICLE, "LU12345",
                 Instant.parse("2030-01-07T10:00:00Z"), Instant.parse("2030-01-07T12:00:00Z"), status,
                 new BigDecimal("10.00"), new BigDecimal("20.00"), new BigDecimal("1.00"), new BigDecimal("21.00"), "PLN",
-                status == ReservationStatus.CONFIRMED ? "4921" : null, null, null, Instant.parse("2029-12-01T00:00:00Z"));
+                status == ReservationStatus.CONFIRMED ? "4921" : null, null, null, Instant.parse("2029-12-01T00:00:00Z"), null, null, null, null);
     }
 
     @TestConfiguration

@@ -134,6 +134,11 @@ public class Reservation extends BaseEntity {
         this.cancelledAt = now;
     }
 
+    /** True when the given PIN or QR token is the one issued for this reservation. */
+    public boolean matchesAccessCode(String pin, String qr) {
+        return (pin != null && pin.equals(pinCode)) || (qr != null && qr.equals(qrToken));
+    }
+
     /** Check-in is possible between the start and the end of the reserved period. */
     public void checkIn(Instant now) {
         requireStatus("be checked in", ReservationStatus.CONFIRMED);
