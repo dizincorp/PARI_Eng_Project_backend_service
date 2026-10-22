@@ -1,6 +1,7 @@
 package pl.pollub.pari;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.test.context.TestPropertySource;
 import pl.pollub.pari.support.DbTestBase;
 
@@ -25,5 +26,12 @@ class DemoDataMigrationTest extends DbTestBase {
                 where status = 'ACTIVE' and ST_DWithin(location, ST_MakePoint(22.5684, 51.2465)::geography, 3000)
                 """, Integer.class);
         assertThat(nearOldTown).isGreaterThanOrEqualTo(3);
+    }
+
+    @Test
+    void demoUsersCanLogInWithTheDocumentedPassword() {
+        String hash = jdbc.queryForObject("select password_hash from users where email = 'jan.driver@pari.test'", String.class);
+
+        assertThat(new BCryptPasswordEncoder().matches("Demo1234!", hash)).isTrue();
     }
 }

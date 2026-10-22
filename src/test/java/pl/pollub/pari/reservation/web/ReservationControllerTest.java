@@ -9,6 +9,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import pl.pollub.pari.auth.security.SecurityConfig;
 import pl.pollub.pari.common.exception.ConflictException;
 import pl.pollub.pari.common.exception.ForbiddenException;
 import pl.pollub.pari.common.exception.NotFoundException;
@@ -32,7 +33,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /** HTTP contract of booking: status codes and the error body. Services are mocked; the database is not involved. */
 @WebMvcTest(ReservationController.class)
-@Import({ApiExceptionHandler.class, ReservationControllerTest.Time.class})
+@Import({ApiExceptionHandler.class, SecurityConfig.class, ReservationControllerTest.Time.class})
 class ReservationControllerTest {
 
     private static final UUID USER = UUID.randomUUID();

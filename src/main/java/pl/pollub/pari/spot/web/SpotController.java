@@ -1,5 +1,6 @@
 package pl.pollub.pari.spot.web;
 
+import pl.pollub.pari.auth.security.CurrentUserId;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
@@ -11,7 +12,6 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -31,8 +31,8 @@ import java.util.UUID;
 /**
  * Parking spaces: creation and management by the owner, and public search.
  *
- * <p>TEMPORARY identity: the caller is taken from the {@code X-User-Id} header until Spring Security with JWT is added.
- * Anyone can send any id, so this must not be exposed outside development.
+ * <p>The caller is the user of the Bearer token ({@link CurrentUserId}). The {@code X-User-Id} header is honoured only
+ * when {@code pari.security.jwt.dev-header-auth} is on (development and tests).
  */
 @RestController
 @RequestMapping("/api/spots")
@@ -71,7 +71,7 @@ public class SpotController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public SpotView create(@RequestHeader(USER_HEADER) UUID userId, @Valid @RequestBody CreateSpotRequest r) {
+    public SpotView create(@CurrentUserId UUID userId, @Valid @RequestBody CreateSpotRequest r) {
         return spotService.create(userId, new SpotService.CreateSpotCommand(r.name(), r.description(), r.street(), r.city(),
                 r.postalCode(), r.country(), r.lat(), r.lng(), r.lengthCm(), r.widthCm(), r.heightCm(),
                 toMoney(r.hourlyPrice()), r.accessInstructions(), r.autoAccept() == null || r.autoAccept(),
@@ -81,7 +81,7 @@ public class SpotController {
     /** Map search. Public; the optional header only lets an owner see their own access instructions. */
     @GetMapping
     public List<SpotSearchService.SearchHit> search(
-            @RequestHeader(value = USER_HEADER, required = false) UUID userId,
+            @CurrentUserId UUID userId,
             @RequestParam double lat,
             @RequestParam double lng,
             @RequestParam(defaultValue = "5000") double radiusMeters,
@@ -96,22 +96,22 @@ public class SpotController {
     }
 
     @GetMapping("/mine")
-    public List<SpotView> mine(@RequestHeader(USER_HEADER) UUID userId) {
+    public List<SpotView> mine(@CurrentUserId UUID userId) {
         return spotService.listOwn(userId);
     }
 
     @GetMapping("/{id}")
-    public SpotView get(@RequestHeader(value = USER_HEADER, required = false) UUID userId, @PathVariable UUID id) {
+    public SpotView get(@CurrentUserId UUID userId, @PathVariable UUID id) {
         return spotService.get(id, userId);
     }
 
     @PostMapping("/{id}/activate")
-    public SpotView activate(@RequestHeader(USER_HEADER) UUID userId, @PathVariable UUID id) {
+    public SpotView activate(@CurrentUserId UUID userId, @PathVariable UUID id) {
         return spotService.activate(userId, id);
     }
 
     @PostMapping("/{id}/deactivate")
-    public SpotView deactivate(@RequestHeader(USER_HEADER) UUID userId, @PathVariable UUID id) {
+    public SpotView deactivate(@CurrentUserId UUID userId, @PathVariable UUID id) {
         return spotService.deactivate(userId, id);
     }
 

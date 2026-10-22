@@ -3,6 +3,10 @@ pari:
   security:
     # Development-only key, NOT a secret. Never use it outside a developer machine.
     data-encryption-key: ZGV2LW9ubHkta2V5LWZvci1wYXJpLWxvY2FsLXVzZSE=
+    jwt:
+      # Development-only secret, NOT a secret. Never use it outside a developer machine.
+      secret: ZGV2LW9ubHktand0LXNlY3JldC1mb3ItcGFyaS1sb2NhbC11c2Uh
+      dev-header-auth: true   # X-User-Id still works locally and in Swagger; production uses tokens only
 
 spring:
   flyway:

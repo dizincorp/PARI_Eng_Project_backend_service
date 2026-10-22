@@ -10,6 +10,7 @@ import org.springdoc.core.properties.SpringDocConfigProperties;
 import org.springdoc.webmvc.core.configuration.SpringDocWebMvcConfiguration;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import pl.pollub.pari.auth.security.SecurityConfig;
 import pl.pollub.pari.availability.service.AvailabilityService;
 import pl.pollub.pari.reservation.service.PricingService;
 import pl.pollub.pari.reservation.service.ReservationService;
@@ -27,7 +28,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @WebMvcTest({SpotController.class, AvailabilityController.class, ReservationController.class})
 // the WebMvcTest slice does not include springdoc's auto-configuration
 @ImportAutoConfiguration({SpringDocConfiguration.class, SpringDocConfigProperties.class, SpringDocWebMvcConfiguration.class})
-@Import({OpenApiConfig.class, TimeConfig.class})
+@Import({OpenApiConfig.class, TimeConfig.class, SecurityConfig.class})
 class OpenApiDocumentTest {
 
     @Autowired
@@ -51,6 +52,8 @@ class OpenApiDocumentTest {
                 .andExpect(jsonPath("$.paths['/api/spots']").exists())
                 .andExpect(jsonPath("$.paths['/api/spots/{spotId}/availability-rules']").exists())
                 .andExpect(jsonPath("$.paths['/api/reservations']").exists())
-                .andExpect(jsonPath("$.components.securitySchemes['X-User-Id']").exists());
+                .andExpect(jsonPath("$.components.securitySchemes.bearerAuth.scheme").value("bearer"))
+                // the caller comes from the token, so it must not show up as a request parameter
+                .andExpect(jsonPath("$.paths['/api/reservations'].get.parameters[?(@.name == 'userId')]").isEmpty());
     }
 }

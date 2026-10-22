@@ -23,6 +23,10 @@ dependencies {
     // OpenAPI document (/v3/api-docs) and Swagger UI (/swagger-ui.html); not managed by Spring Boot, hence the explicit version
     implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.1'
 
+    // authentication: Spring Security with stateless JWT (HS256, Nimbus is part of the resource-server starter)
+    implementation 'org.springframework.boot:spring-boot-starter-security'
+    implementation 'org.springframework.boot:spring-boot-starter-security-oauth2-resource-server'
+
     // data layer
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
     implementation 'org.springframework.boot:spring-boot-starter-flyway'
@@ -37,6 +41,7 @@ dependencies {
     // tests
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
+    testImplementation 'org.springframework.boot:spring-boot-starter-security-test'
     testImplementation 'org.springframework.boot:spring-boot-starter-data-jpa-test'
     testImplementation 'org.springframework.boot:spring-boot-testcontainers'
     testImplementation 'org.testcontainers:testcontainers-junit-jupiter'

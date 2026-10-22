@@ -9,13 +9,12 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * OpenAPI metadata for Swagger UI. The {@code X-User-Id} header is modelled as an API key so it can be filled once via
- * "Authorize". TEMPORARY: replace with a bearer JWT scheme when Spring Security is added.
+ * OpenAPI metadata for Swagger UI. Log in via POST /api/auth/login, then click "Authorize" and paste the token.
  */
 @Configuration
 public class OpenApiConfig {
 
-    private static final String USER_ID_SCHEME = "X-User-Id";
+    private static final String BEARER_SCHEME = "bearerAuth";
 
     @Bean
     OpenAPI pariOpenApi() {
@@ -23,14 +22,12 @@ public class OpenApiConfig {
                 .info(new Info()
                         .title("PARI backend API")
                         .version("0.0.1")
-                        .description("Parking space rental portal. There is no real authentication yet: "
-                                + "the caller is identified by the temporary X-User-Id header (a user UUID). "
-                                + "Payments use a mock gateway."))
-                .components(new Components().addSecuritySchemes(USER_ID_SCHEME, new SecurityScheme()
-                        .type(SecurityScheme.Type.APIKEY)
-                        .in(SecurityScheme.In.HEADER)
-                        .name("X-User-Id")
-                        .description("Id of the acting user (temporary, until JWT is added)")))
-                .addSecurityItem(new SecurityRequirement().addList(USER_ID_SCHEME));
+                        .description("Parking space rental portal. Authenticate with a JWT from POST /api/auth/login "
+                                + "(Authorize button). Payments use a mock gateway."))
+                .components(new Components().addSecuritySchemes(BEARER_SCHEME, new SecurityScheme()
+                        .type(SecurityScheme.Type.HTTP)
+                        .scheme("bearer")
+                        .bearerFormat("JWT")))
+                .addSecurityItem(new SecurityRequirement().addList(BEARER_SCHEME));
     }
 }
