@@ -20,6 +20,10 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID>,
 
     Optional<Reservation> findByCode(String code);
 
+    boolean existsByVehicleId(UUID vehicleId);
+
+    boolean existsByVehicleIdAndStatusIn(UUID vehicleId, Collection<ReservationStatus> statuses);
+
     /** True when a slot-holding reservation of the spot overlaps [start, end). */
     @Query("""
             select count(r) > 0 from Reservation r
