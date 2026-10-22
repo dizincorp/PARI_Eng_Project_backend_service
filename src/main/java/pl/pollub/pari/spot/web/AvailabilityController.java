@@ -1,5 +1,6 @@
 package pl.pollub.pari.spot.web;
 
+import pl.pollub.pari.auth.security.CurrentUserId;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -11,7 +12,6 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
@@ -71,7 +71,7 @@ public class AvailabilityController {
 
     /** Replaces the whole weekly schedule. An empty list means the space is open all the time. */
     @PutMapping("/availability-rules")
-    public List<RuleResponse> replaceRules(@RequestHeader(SpotController.USER_HEADER) UUID userId,
+    public List<RuleResponse> replaceRules(@CurrentUserId UUID userId,
                                            @PathVariable UUID spotId,
                                            @Valid @RequestBody List<@Valid RuleRequest> rules) {
         return availability.replaceWeeklyRules(userId, spotId, rules.stream()
@@ -83,14 +83,14 @@ public class AvailabilityController {
 
     @PostMapping("/blocked-periods")
     @ResponseStatus(HttpStatus.CREATED)
-    public BlockedPeriodResponse block(@RequestHeader(SpotController.USER_HEADER) UUID userId,
+    public BlockedPeriodResponse block(@CurrentUserId UUID userId,
                                        @PathVariable UUID spotId, @Valid @RequestBody BlockRequest r) {
         return BlockedPeriodResponse.of(availability.blockPeriod(userId, spotId, new TimeRange(r.start(), r.end()), r.reason()));
     }
 
     @DeleteMapping("/blocked-periods/{periodId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void unblock(@RequestHeader(SpotController.USER_HEADER) UUID userId, @PathVariable UUID spotId,
+    public void unblock(@CurrentUserId UUID userId, @PathVariable UUID spotId,
                         @PathVariable UUID periodId) {
         availability.unblockPeriod(userId, spotId, periodId);
     }

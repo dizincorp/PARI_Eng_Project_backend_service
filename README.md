@@ -8,7 +8,7 @@ Documentation lives in Confluence (space *My Software Team*, page *PARI project 
 
 The data layer is implemented (Flyway schema, JPA entities with their business rules, repositories), and the main flow runs on top of it: **creating a parking space, searching for one, reserving it and paying for it**. Payments go through a **mock gateway** (no real money, see [ADR 0004](docs/adr/0004-payment-gateway-port-with-mock.md)).
 
-Not implemented yet: authentication (callers are identified by a temporary `X-User-Id` header, never expose this outside development), check-in and check-out, overstay penalties, the payout release job, reviews, support, verification workflow, notifications, premium, and the real Stripe adapter.
+Authentication is Spring Security with a JWT Bearer token (`/api/auth/register`, `/api/auth/login`, `/api/auth/me`). Not implemented yet: refresh tokens, e-mail and phone verification, check-in and check-out, overstay penalties, the payout release job, reviews, support, verification workflow, notifications, premium, and the real Stripe adapter.
 
 | Part | Where |
 | --- | --- |
@@ -38,13 +38,15 @@ docker compose up -d
 SPRING_PROFILES_ACTIVE=local ./gradlew bootRun
 ```
 
-The `local` profile also loads demo data (`src/main/resources/db/dev`): an owner, a driver, a vehicle, a test card and four active spots in Lublin. The ids are listed at the top of `V1000__demo_data.sql` (for example driver `00000000-0000-0000-0000-000000000002` for `X-User-Id`; book with token `pm_card_visa`). To load it elsewhere set `SPRING_FLYWAY_LOCATIONS=classpath:db/migration,classpath:db/dev`; never do this in production.
+The `local` profile also loads demo data (`src/main/resources/db/dev`): an owner, a driver, a vehicle, a test card and four active spots in Lublin. The ids are listed at the top of `V1000__demo_data.sql` (users `anna.owner@pari.test`, `jan.driver@pari.test`, `ola.both@pari.test`, password `Demo1234!`; book with token `pm_card_visa`). To load it elsewhere set `SPRING_FLYWAY_LOCATIONS=classpath:db/migration,classpath:db/dev`; never do this in production.
+
+Secrets come from environment variables: `PARI_DATA_KEY` (data encryption) and `PARI_JWT_SECRET` (token signing), each the base64 of at least 32 random bytes; the application refuses to start without them. The `local` profile contains development-only values for both, and also accepts the legacy `X-User-Id` header (`pari.security.jwt.dev-header-auth`) so scripts keep working; never enable that outside development.
 
 The `local` profile contains a development-only encryption key. In every other environment set `PARI_DATA_KEY` (base64 of 32 random bytes, for example `openssl rand -base64 32`) and `PARI_DB_URL`, `PARI_DB_USER`, `PARI_DB_PASSWORD`.
 
 ## API documentation (Swagger UI)
 
-With the app running, open <http://localhost:8080/swagger-ui.html> to browse and try every endpoint. The raw OpenAPI document is at `/v3/api-docs`. There is no real authentication yet: click **Authorize** and enter a user UUID, which is sent as the temporary `X-User-Id` header.
+With the app running, open <http://localhost:8080/swagger-ui.html> to browse and try every endpoint. The raw OpenAPI document is at `/v3/api-docs`. Log in with `POST /api/auth/login` (demo user `jan.driver@pari.test` / `Demo1234!` when demo data is loaded), copy the `token` from the answer and paste it into **Authorize**.
 
 ## Workflow
 

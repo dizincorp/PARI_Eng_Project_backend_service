@@ -1,5 +1,6 @@
 package pl.pollub.pari.reservation.web;
 
+import pl.pollub.pari.auth.security.CurrentUserId;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -8,7 +9,6 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -68,7 +68,7 @@ public class ReservationController {
     /** Answers 201 with the reservation, or 402 when the payment is declined (the reservation is then saved as CANCELLED). */
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public ReservationView book(@RequestHeader(SpotController.USER_HEADER) UUID userId, @Valid @RequestBody BookRequest r) {
+    public ReservationView book(@CurrentUserId UUID userId, @Valid @RequestBody BookRequest r) {
         ReservationService.BookingResult result = reservations.book(userId,
                 new ReservationService.BookCommand(r.spotId(), r.vehicleId(), r.start(), r.end(), r.paymentMethodToken()));
         if (result.paymentFailed()) {
@@ -79,7 +79,7 @@ public class ReservationController {
 
     /** Reservations of the caller as a driver. */
     @GetMapping
-    public List<ReservationView> mine(@RequestHeader(SpotController.USER_HEADER) UUID userId,
+    public List<ReservationView> mine(@CurrentUserId UUID userId,
                                       @RequestParam(defaultValue = "0") int page,
                                       @RequestParam(defaultValue = "20") int size) {
         return reservations.listForDriver(userId, page, Math.min(Math.max(size, 1), 50));
@@ -87,7 +87,7 @@ public class ReservationController {
 
     /** Reservations of the caller's spaces. */
     @GetMapping("/incoming")
-    public List<ReservationView> incoming(@RequestHeader(SpotController.USER_HEADER) UUID userId,
+    public List<ReservationView> incoming(@CurrentUserId UUID userId,
                                           @RequestParam(required = false) UUID spotId,
                                           @RequestParam(required = false) ReservationStatus status,
                                           @RequestParam(defaultValue = "0") int page,
@@ -97,42 +97,42 @@ public class ReservationController {
 
     /** The driver's running parking session; 404 when there is none. */
     @GetMapping("/active-session")
-    public ReservationView activeSession(@RequestHeader(SpotController.USER_HEADER) UUID userId) {
+    public ReservationView activeSession(@CurrentUserId UUID userId) {
         return reservations.activeSession(userId);
     }
 
     @GetMapping("/{id}")
-    public ReservationView get(@RequestHeader(SpotController.USER_HEADER) UUID userId, @PathVariable UUID id) {
+    public ReservationView get(@CurrentUserId UUID userId, @PathVariable UUID id) {
         return reservations.get(userId, id);
     }
 
     @PostMapping("/{id}/cancel")
-    public ReservationView cancel(@RequestHeader(SpotController.USER_HEADER) UUID userId, @PathVariable UUID id,
+    public ReservationView cancel(@CurrentUserId UUID userId, @PathVariable UUID id,
                                   @RequestBody(required = false) ReasonRequest r) {
         return reservations.cancel(userId, id, r == null || r.reason() == null ? "Cancelled by user" : r.reason());
     }
 
     @PostMapping("/{id}/accept")
-    public ReservationView accept(@RequestHeader(SpotController.USER_HEADER) UUID userId, @PathVariable UUID id) {
+    public ReservationView accept(@CurrentUserId UUID userId, @PathVariable UUID id) {
         return reservations.accept(userId, id);
     }
 
     @PostMapping("/{id}/reject")
-    public ReservationView reject(@RequestHeader(SpotController.USER_HEADER) UUID userId, @PathVariable UUID id,
+    public ReservationView reject(@CurrentUserId UUID userId, @PathVariable UUID id,
                                   @RequestBody(required = false) ReasonRequest r) {
         return reservations.reject(userId, id, r == null || r.reason() == null ? "Rejected by owner" : r.reason());
     }
 
     /** Starts the parking session. 403 for a wrong code, 409 outside the reserved period. */
     @PostMapping("/{id}/check-in")
-    public ReservationView checkIn(@RequestHeader(SpotController.USER_HEADER) UUID userId, @PathVariable UUID id,
+    public ReservationView checkIn(@CurrentUserId UUID userId, @PathVariable UUID id,
                                    @RequestBody CheckInRequest r) {
         return reservations.checkIn(userId, id, r.pinCode(), r.qrToken());
     }
 
     /** Ends the parking session; time over the reserved end is charged as a penalty. */
     @PostMapping("/{id}/check-out")
-    public ReservationView checkOut(@RequestHeader(SpotController.USER_HEADER) UUID userId, @PathVariable UUID id) {
+    public ReservationView checkOut(@CurrentUserId UUID userId, @PathVariable UUID id) {
         return reservations.checkOut(userId, id);
     }
 }
