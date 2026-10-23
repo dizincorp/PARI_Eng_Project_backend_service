@@ -38,6 +38,8 @@ class OpenApiDocumentTest {
     @MockitoBean
     SpotSearchService searchService;
     @MockitoBean
+    pl.pollub.pari.spot.service.SpotCalendarService calendar;
+    @MockitoBean
     AvailabilityService availability;
     @MockitoBean
     ReservationService reservations;

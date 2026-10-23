@@ -1,6 +1,7 @@
 package pl.pollub.pari.spot.web;
 
 import pl.pollub.pari.auth.security.CurrentUserId;
+import com.fasterxml.jackson.annotation.JsonAlias;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -48,7 +49,8 @@ public class AvailabilityController {
         }
     }
 
-    public record BlockRequest(@NotNull Instant start, @NotNull Instant end, String reason) {
+    /** {@code startsAt} and {@code endsAt} are accepted as names too (calendar API). */
+    public record BlockRequest(@NotNull @JsonAlias("startsAt") Instant start, @NotNull @JsonAlias("endsAt") Instant end, String reason) {
     }
 
     public record BlockedPeriodResponse(UUID id, Instant start, Instant end, String reason) {
@@ -81,14 +83,15 @@ public class AvailabilityController {
                 .stream().map(RuleResponse::of).toList();
     }
 
-    @PostMapping("/blocked-periods")
+    /** Also available as POST /calendar/blocks. */
+    @PostMapping({"/blocked-periods", "/calendar/blocks"})
     @ResponseStatus(HttpStatus.CREATED)
     public BlockedPeriodResponse block(@CurrentUserId UUID userId,
                                        @PathVariable UUID spotId, @Valid @RequestBody BlockRequest r) {
         return BlockedPeriodResponse.of(availability.blockPeriod(userId, spotId, new TimeRange(r.start(), r.end()), r.reason()));
     }
 
-    @DeleteMapping("/blocked-periods/{periodId}")
+    @DeleteMapping({"/blocked-periods/{periodId}", "/calendar/blocks/{periodId}"})
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void unblock(@CurrentUserId UUID userId, @PathVariable UUID spotId,
                         @PathVariable UUID periodId) {
