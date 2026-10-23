@@ -34,4 +34,14 @@ public interface PayoutRepository extends JpaRepository<Payout, UUID> {
                      @Param("status") String status,
                      @Param("from") Instant from,
                      @Param("to") Instant to);
+
+    /** Sum of the owner's net payouts in minor units for the given statuses (F17). */
+    @Query(value = "SELECT COALESCE(SUM(net_minor), 0) FROM payouts WHERE owner_id = :ownerId AND status IN (:statuses)",
+            nativeQuery = true)
+    long sumNetMinor(@Param("ownerId") UUID ownerId, @Param("statuses") java.util.Collection<String> statuses);
+
+    /** Sum of the commission kept by the platform on the owner's payouts with the given status. */
+    @Query(value = "SELECT COALESCE(SUM(commission_minor), 0) FROM payouts WHERE owner_id = :ownerId AND status = :status",
+            nativeQuery = true)
+    long sumCommissionMinor(@Param("ownerId") UUID ownerId, @Param("status") String status);
 }
