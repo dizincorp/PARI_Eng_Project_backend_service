@@ -8,15 +8,18 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import pl.pollub.pari.common.domain.Money;
+import pl.pollub.pari.spot.service.SpotCalendarService;
 import pl.pollub.pari.spot.service.SpotSearchService;
 import pl.pollub.pari.spot.service.SpotService;
 import pl.pollub.pari.spot.service.SpotView;
@@ -61,12 +64,26 @@ public class SpotController {
             boolean requestVerification) {
     }
 
+    /** {@code dailyPrice} from the request sketch is not supported: prices are hourly only. */
+    public record UpdateSpotRequest(
+            @NotBlank String name,
+            String description,
+            @NotNull @DecimalMin("0.01") BigDecimal hourlyPrice,
+            @Positive int lengthCm,
+            @Positive int widthCm,
+            @Positive Integer heightCm,
+            String accessInstructions,
+            Set<String> amenities) {
+    }
+
     private final SpotService spotService;
     private final SpotSearchService searchService;
+    private final SpotCalendarService calendar;
 
-    public SpotController(SpotService spotService, SpotSearchService searchService) {
+    public SpotController(SpotService spotService, SpotSearchService searchService, SpotCalendarService calendar) {
         this.spotService = spotService;
         this.searchService = searchService;
+        this.calendar = calendar;
     }
 
     @PostMapping
@@ -103,6 +120,26 @@ public class SpotController {
     @GetMapping("/{id}")
     public SpotView get(@CurrentUserId UUID userId, @PathVariable UUID id) {
         return spotService.get(id, userId);
+    }
+
+    @PutMapping("/{id}")
+    public SpotView update(@CurrentUserId UUID userId, @PathVariable UUID id, @Valid @RequestBody UpdateSpotRequest r) {
+        return spotService.update(userId, id, new SpotService.UpdateSpotCommand(r.name(), r.description(),
+                toMoney(r.hourlyPrice()), r.lengthCm(), r.widthCm(), r.heightCm(), r.accessInstructions(), r.amenities()));
+    }
+
+    /** Removes the space (archived). 409 while it has active or upcoming reservations. */
+    @DeleteMapping("/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void delete(@CurrentUserId UUID userId, @PathVariable UUID id) {
+        spotService.archive(userId, id);
+    }
+
+    /** Occupied intervals (reservations and blocked periods) overlapping [from, to). */
+    @GetMapping("/{id}/booked-slots")
+    public List<SpotCalendarService.BookedSlot> bookedSlots(@CurrentUserId UUID userId, @PathVariable UUID id,
+                                                            @RequestParam Instant from, @RequestParam Instant to) {
+        return calendar.bookedSlots(userId, id, from, to);
     }
 
     @PostMapping("/{id}/activate")

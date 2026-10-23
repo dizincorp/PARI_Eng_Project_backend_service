@@ -120,7 +120,7 @@ public class ParkingSpot extends BaseEntity {
     }
 
     public void activate() {
-        if (status == SpotStatus.BLOCKED) {
+        if (status == SpotStatus.BLOCKED || status == SpotStatus.ARCHIVED) {
             throw new IllegalStateTransitionException("ParkingSpot", status, "be activated");
         }
         if (ownershipDeclaredAt == null) {
@@ -136,8 +136,19 @@ public class ParkingSpot extends BaseEntity {
         this.status = SpotStatus.INACTIVE;
     }
 
+    /** The owner removes the space for good. It disappears from every list; reservations that already ended keep pointing at it. */
+    public void archive() {
+        if (status == SpotStatus.ARCHIVED) {
+            return;
+        }
+        this.status = SpotStatus.ARCHIVED;
+    }
+
     /** Moderation: hides the listing, for example when its owner is blocked. */
     public void block() {
+        if (status == SpotStatus.ARCHIVED) {
+            return;
+        }
         this.status = SpotStatus.BLOCKED;
     }
 
