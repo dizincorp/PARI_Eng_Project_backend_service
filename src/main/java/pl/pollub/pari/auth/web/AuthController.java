@@ -9,6 +9,7 @@ import jakarta.validation.constraints.Size;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -34,6 +35,14 @@ public class AuthController {
             @NotNull Role role) {
     }
 
+    /** Replaces the profile: an empty {@code phoneNumber} or {@code avatarUrl} removes it. */
+    public record UpdateProfileRequest(
+            @NotBlank @Size(max = 100) String firstName,
+            @NotBlank @Size(max = 100) String lastName,
+            @Pattern(regexp = "^\\+?[0-9 ()-]{7,20}$", message = "must be a phone number") String phoneNumber,
+            @Size(max = 500) @Pattern(regexp = "^(https?://\\S+)?$", message = "must be an http(s) URL") String avatarUrl) {
+    }
+
     public record LoginRequest(@NotBlank String email, @NotBlank String password) {
     }
 
@@ -52,6 +61,11 @@ public class AuthController {
     @PostMapping("/login")
     public AuthService.AuthResponse login(@Valid @RequestBody LoginRequest r) {
         return auth.login(r.email(), r.password());
+    }
+
+    @PutMapping("/profile")
+    public AuthService.UserView updateProfile(@CurrentUserId UUID userId, @Valid @RequestBody UpdateProfileRequest r) {
+        return auth.updateProfile(userId, r.firstName(), r.lastName(), r.phoneNumber(), r.avatarUrl());
     }
 
     @GetMapping("/me")

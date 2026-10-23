@@ -9,16 +9,15 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import pl.pollub.pari.review.service.ReviewService;
-import pl.pollub.pari.spot.web.SpotController;
+import pl.pollub.pari.auth.security.CurrentUserId;
 
 import java.util.UUID;
 
-/** Reviews of parking spaces. Identity is temporary, see {@link SpotController}. */
+/** Reviews of parking spaces. The caller is the user of the Bearer token. */
 @RestController
 public class ReviewController {
 
@@ -34,7 +33,7 @@ public class ReviewController {
     /** Reviews the space of a completed reservation. 409 when it is not completed or was already reviewed. */
     @PostMapping("/api/reservations/{id}/reviews")
     @ResponseStatus(HttpStatus.CREATED)
-    public ReviewService.ReviewView create(@RequestHeader(SpotController.USER_HEADER) UUID userId, @PathVariable UUID id,
+    public ReviewService.ReviewView create(@CurrentUserId UUID userId, @PathVariable UUID id,
                                            @Valid @RequestBody CreateReviewRequest r) {
         return reviews.create(userId, id, r.rating(), r.comment());
     }

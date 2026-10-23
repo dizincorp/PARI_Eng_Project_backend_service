@@ -10,17 +10,16 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
-import pl.pollub.pari.spot.web.SpotController;
+import pl.pollub.pari.auth.security.CurrentUserId;
 import pl.pollub.pari.user.service.VehicleService;
 
 import java.util.List;
 import java.util.UUID;
 
-/** The caller's vehicles. Identity is temporary, see {@link SpotController}. */
+/** The caller's vehicles. The caller is the user of the Bearer token. */
 @RestController
 @RequestMapping("/api/vehicles")
 public class VehicleController {
@@ -38,20 +37,20 @@ public class VehicleController {
     }
 
     @GetMapping
-    public List<VehicleService.VehicleView> list(@RequestHeader(SpotController.USER_HEADER) UUID userId) {
+    public List<VehicleService.VehicleView> list(@CurrentUserId UUID userId) {
         return vehicles.list(userId);
     }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public VehicleService.VehicleView create(@RequestHeader(SpotController.USER_HEADER) UUID userId,
+    public VehicleService.VehicleView create(@CurrentUserId UUID userId,
                                              @Valid @RequestBody CreateVehicleRequest r) {
         return vehicles.create(userId, r.model(), r.plateNumber());
     }
 
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void delete(@RequestHeader(SpotController.USER_HEADER) UUID userId, @PathVariable UUID id) {
+    public void delete(@CurrentUserId UUID userId, @PathVariable UUID id) {
         vehicles.delete(userId, id);
     }
 }

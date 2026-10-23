@@ -15,6 +15,7 @@ import pl.pollub.pari.common.exception.AuthenticationFailedException;
 import pl.pollub.pari.common.exception.ConflictException;
 import pl.pollub.pari.common.exception.ForbiddenException;
 import pl.pollub.pari.common.exception.NotFoundException;
+import pl.pollub.pari.common.security.PhoneHasher;
 import pl.pollub.pari.user.domain.Role;
 import pl.pollub.pari.user.domain.User;
 import pl.pollub.pari.user.repository.UserRepository;
@@ -36,10 +37,16 @@ public class AuthService {
     /** Hash of a random password, compared against when the e-mail is unknown so both failures take equally long. */
     private final String dummyHash;
 
-    public record UserView(UUID id, String email, String firstName, String lastName, Role role, int loyaltyPoints) {
+    public record UserView(UUID id, String email, String firstName, String lastName, Role role, int loyaltyPoints,
+                           String avatarUrl) {
+
+        public UserView(UUID id, String email, String firstName, String lastName, Role role, int loyaltyPoints) {
+            this(id, email, firstName, lastName, role, loyaltyPoints, null);
+        }
 
         static UserView of(User u) {
-            return new UserView(u.getId(), u.getEmail(), u.getFirstName(), u.getLastName(), u.getActiveRole(), u.getLoyaltyPoints());
+            return new UserView(u.getId(), u.getEmail(), u.getFirstName(), u.getLastName(), u.getActiveRole(),
+                    u.getLoyaltyPoints(), u.getAvatarUrl());
         }
     }
 
@@ -51,13 +58,16 @@ public class AuthService {
     private final JwtEncoder jwtEncoder;
     private final JwtProperties jwt;
     private final Clock clock;
+    private final PhoneHasher phoneHasher;
 
-    public AuthService(UserRepository users, PasswordEncoder passwordEncoder, JwtEncoder jwtEncoder, JwtProperties jwt, Clock clock) {
+    public AuthService(UserRepository users, PasswordEncoder passwordEncoder, JwtEncoder jwtEncoder, JwtProperties jwt, Clock clock,
+                       PhoneHasher phoneHasher) {
         this.users = users;
         this.passwordEncoder = passwordEncoder;
         this.jwtEncoder = jwtEncoder;
         this.jwt = jwt;
         this.clock = clock;
+        this.phoneHasher = phoneHasher;
         this.dummyHash = passwordEncoder.encode(UUID.randomUUID().toString());
     }
 
@@ -69,12 +79,18 @@ public class AuthService {
         if (users.existsByEmail(email.trim())) {
             throw emailTaken();
         }
-        User user = new User(email, passwordEncoder.encode(password), firstName.trim(), lastName.trim(),
-                phoneNumber == null || phoneNumber.isBlank() ? null : phoneNumber.trim(), Set.of(role));
+        User user = new User(email, passwordEncoder.encode(password), firstName.trim(), lastName.trim(), null, Set.of(role));
+        if (phoneNumber != null && !phoneNumber.isBlank()) {
+            String hash = phoneHasher.hash(phoneNumber);
+            if (users.existsByPhoneHash(hash)) {
+                throw phoneTaken();
+            }
+            user.changePhone(phoneNumber.trim(), hash);
+        }
         try {
             users.saveAndFlush(user);
         } catch (DataIntegrityViolationException e) {
-            throw emailTaken();
+            throw users.existsByEmail(email.trim()) ? emailTaken() : phoneTaken();
         }
         return UserView.of(user);
     }
@@ -104,6 +120,37 @@ public class AuthService {
     @Transactional(readOnly = true)
     public UserView me(UUID userId) {
         return users.findById(userId).map(UserView::of).orElseThrow(() -> new NotFoundException("User not found"));
+    }
+
+    /**
+     * Replaces the editable profile fields; an empty phone number or avatar clears it. The phone number must not belong to
+     * another account. A changed phone number has to be verified again.
+     */
+    @Transactional
+    public UserView updateProfile(UUID userId, String firstName, String lastName, String phoneNumber, String avatarUrl) {
+        User user = users.findById(userId).orElseThrow(() -> new NotFoundException("User not found"));
+        user.setFirstName(firstName.trim());
+        user.setLastName(lastName.trim());
+        if (phoneNumber == null || phoneNumber.isBlank()) {
+            user.changePhone(null, null);
+        } else {
+            String hash = phoneHasher.hash(phoneNumber);
+            if (users.existsByPhoneHashAndIdNot(hash, userId)) {
+                throw phoneTaken();
+            }
+            user.changePhone(phoneNumber.trim(), hash);
+        }
+        user.setAvatarUrl(avatarUrl == null || avatarUrl.isBlank() ? null : avatarUrl.trim());
+        try {
+            users.flush();
+        } catch (DataIntegrityViolationException e) {
+            throw phoneTaken();
+        }
+        return UserView.of(user);
+    }
+
+    private static ConflictException phoneTaken() {
+        return new ConflictException("PHONE_ALREADY_REGISTERED", "An account with this phone number already exists");
     }
 
     private static ConflictException emailTaken() {
