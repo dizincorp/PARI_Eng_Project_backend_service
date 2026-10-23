@@ -1,5 +1,6 @@
 package pl.pollub.pari.reservation.service;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -14,6 +15,8 @@ import pl.pollub.pari.common.service.AuditTrail;
 import pl.pollub.pari.payment.service.PaymentService;
 import pl.pollub.pari.reservation.domain.Reservation;
 import pl.pollub.pari.reservation.domain.ReservationStatus;
+import pl.pollub.pari.reservation.event.ReservationEvent;
+import pl.pollub.pari.spot.event.SpotOccupancyChanged;
 import pl.pollub.pari.reservation.repository.ReservationRepository;
 import pl.pollub.pari.spot.domain.ParkingSpot;
 import pl.pollub.pari.spot.repository.ParkingSpotRepository;
@@ -73,10 +76,11 @@ public class ReservationService {
     private final PaymentService payments;
     private final AuditTrail audit;
     private final Clock clock;
+    private final ApplicationEventPublisher events;
 
     public ReservationService(ReservationRepository reservations, ParkingSpotRepository spots, UserRepository users,
                               VehicleRepository vehicles, PaymentMethodRepository paymentMethods, AvailabilityService availability, PricingService pricing,
-                              PaymentService payments, AuditTrail audit, Clock clock) {
+                              PaymentService payments, AuditTrail audit, Clock clock, ApplicationEventPublisher events) {
         this.reservations = reservations;
         this.spots = spots;
         this.users = users;
@@ -87,6 +91,7 @@ public class ReservationService {
         this.payments = payments;
         this.audit = audit;
         this.clock = clock;
+        this.events = events;
     }
 
     /** Price preview shown before the driver pays. Checks that the space exists and is bookable, not that the slot is free. */
@@ -156,6 +161,8 @@ public class ReservationService {
         audit.record(driverId, "Reservation", reservation.getId(), "BOOKED",
                 Map.of("code", reservation.getCode(), "status", reservation.getStatus().name(),
                         "totalMinor", reservation.getTotal().amountMinor()));
+        events.publishEvent(ReservationEvent.of(reservation.getStatus() == ReservationStatus.CONFIRMED
+                ? ReservationEvent.Type.BOOKED : ReservationEvent.Type.REQUESTED, reservation, driverId));
         return new BookingResult(ReservationView.of(reservation, driverId), null);
     }
 
@@ -165,6 +172,7 @@ public class ReservationService {
         Reservation reservation = loadForOwner(ownerId, reservationId);
         reservation.accept();
         audit.record(ownerId, "Reservation", reservation.getId(), "ACCEPTED", Map.of("code", reservation.getCode()));
+        events.publishEvent(ReservationEvent.of(ReservationEvent.Type.ACCEPTED, reservation, ownerId));
         return ReservationView.of(reservation, ownerId);
     }
 
@@ -175,6 +183,7 @@ public class ReservationService {
         reservation.reject(reason, clock.instant());
         payments.refundInFull(reservation);
         audit.record(ownerId, "Reservation", reservation.getId(), "REJECTED", Map.of("code", reservation.getCode()));
+        events.publishEvent(ReservationEvent.of(ReservationEvent.Type.REJECTED, reservation, ownerId));
         return ReservationView.of(reservation, ownerId);
     }
 
@@ -188,6 +197,7 @@ public class ReservationService {
         reservation.cancel(reason, clock.instant());
         payments.refundInFull(reservation);
         audit.record(actorId, "Reservation", reservation.getId(), "CANCELLED", Map.of("code", reservation.getCode()));
+        events.publishEvent(ReservationEvent.of(ReservationEvent.Type.CANCELLED, reservation, actorId));
         return ReservationView.of(reservation, actorId);
     }
 
@@ -203,16 +213,21 @@ public class ReservationService {
         }
         reservation.checkIn(clock.instant());
         audit.record(driverId, "Reservation", reservation.getId(), "CHECKED_IN", Map.of("code", reservation.getCode()));
+        // PARI-21: the occupancy flips on every check-in; the ticket has no condition on realtimeStatusEnabled
+        ParkingSpot spot = reservation.getSpot();
+        spot.occupy();
+        events.publishEvent(new SpotOccupancyChanged(spot.getId(), spot.getOccupancy(), reservation.getCheckInAt()));
+        events.publishEvent(ReservationEvent.of(ReservationEvent.Type.CHECKED_IN, reservation, driverId));
         return ReservationView.of(reservation, driverId);
     }
 
     /**
-     * The driver leaves. Time past the reserved end is charged as an overstay penalty to the default payment method; a
-     * failed penalty charge is recorded but does not block the check-out. NOT done yet: the penalty is not added to the
-     * owner's payout.
+     * The driver leaves and the space becomes free (PARI-21). Time past the reserved end plus the grace period is charged
+     * as an overstay penalty to the default payment method (PARI-37) and the owner is notified; a failed penalty charge
+     * is recorded but does not block the check-out. NOT done yet: the penalty is not added to the owner's payout.
      */
     @Transactional
-    public ReservationView checkOut(UUID driverId, UUID reservationId) {
+    public CheckOutView checkOut(UUID driverId, UUID reservationId) {
         Reservation reservation = loadForDriver(driverId, reservationId);
         Instant now = clock.instant();
         Money penalty = Money.ZERO;
@@ -226,7 +241,13 @@ public class ReservationService {
         }
         audit.record(driverId, "Reservation", reservation.getId(), "CHECKED_OUT",
                 Map.of("code", reservation.getCode(), "penaltyMinor", penalty.amountMinor()));
-        return ReservationView.of(reservation, driverId);
+        ParkingSpot spot = reservation.getSpot();
+        spot.release();
+        events.publishEvent(new SpotOccupancyChanged(spot.getId(), spot.getOccupancy(), now));
+        if (!penalty.isZero()) {
+            events.publishEvent(ReservationEvent.overstay(reservation, driverId, reservation.overstayMinutes(), penalty.toDecimal()));
+        }
+        return CheckOutView.of(reservation);
     }
 
     /** The driver's running parking session; 404 when there is none. */

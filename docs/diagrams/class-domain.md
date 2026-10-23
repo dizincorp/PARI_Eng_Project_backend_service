@@ -167,6 +167,7 @@ classDiagram
         COMPLETED
         CANCELLED
         REJECTED
+        EXPIRED
     }
     class Payment {
         +PaymentType type

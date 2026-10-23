@@ -13,6 +13,7 @@ import pl.pollub.pari.spot.domain.Amenity;
 import pl.pollub.pari.spot.domain.Dimensions;
 import pl.pollub.pari.spot.domain.GeoPoint;
 import pl.pollub.pari.spot.domain.ParkingSpot;
+import pl.pollub.pari.spot.domain.SpotPhoto;
 import pl.pollub.pari.spot.domain.SpotStatus;
 import pl.pollub.pari.spot.repository.AmenityRepository;
 import pl.pollub.pari.spot.repository.ParkingSpotRepository;
@@ -64,6 +65,10 @@ public class SpotService {
             Integer heightCm,
             String accessInstructions,
             Set<String> amenityCodes) {
+    }
+
+    /** A photo attached to a space; {@code url} is the public address of the file. */
+    public record PhotoView(UUID id, String storageKey, String url, int position) {
     }
 
     private final ParkingSpotRepository spots;
