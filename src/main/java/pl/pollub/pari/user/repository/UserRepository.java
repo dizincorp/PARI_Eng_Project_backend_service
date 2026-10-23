@@ -12,6 +12,10 @@ public interface UserRepository extends JpaRepository<User, java.util.UUID> {
     @Query("select u from User u where lower(u.email) = lower(:email)")
     Optional<User> findByEmail(@Param("email") String email);
 
+    boolean existsByPhoneHash(String phoneHash);
+
+    boolean existsByPhoneHashAndIdNot(String phoneHash, java.util.UUID id);
+
     @Query("select count(u) > 0 from User u where lower(u.email) = lower(:email)")
     boolean existsByEmail(@Param("email") String email);
 }

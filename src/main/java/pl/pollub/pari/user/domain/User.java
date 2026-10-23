@@ -39,6 +39,13 @@ public class User extends BaseEntity {
     @Column(nullable = false)
     private String lastName;
 
+    /** HMAC of the normalised phone number, unique; lets the application detect a number used twice (see PhoneHasher). */
+    @Column(name = "phone_hash")
+    private String phoneHash;
+
+    @Setter
+    private String avatarUrl;
+
     /** Encrypted at rest (AES-256-GCM, NF04). */
     @Setter
     @Convert(converter = EncryptedStringConverter.class)
@@ -105,6 +112,15 @@ public class User extends BaseEntity {
             throw new IllegalStateTransitionException("user does not hold the role " + role);
         }
         this.activeRole = role;
+    }
+
+    /** Sets or clears the phone number together with its fingerprint; a changed number is no longer verified. */
+    public void changePhone(String phone, String hash) {
+        if (phone == null ? this.phone != null : !phone.equals(this.phone)) {
+            this.phoneVerified = false;
+        }
+        this.phone = phone;
+        this.phoneHash = hash;
     }
 
     public void changePasswordHash(String newHash) {

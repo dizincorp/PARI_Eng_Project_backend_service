@@ -33,6 +33,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -118,6 +119,22 @@ class SecurityRulesTest {
                         {"email":"not-an-email","password":"short","firstName":"","lastName":"K","role":"DRIVER"}"""))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errorCode").value("VALIDATION_FAILED"));
+    }
+
+    @Test
+    void profileUpdateNeedsATokenAndValidatesTheBody() throws Exception {
+        String body = "{\"firstName\":\"Jan\",\"lastName\":\"K\",\"phoneNumber\":\"+48501234567\",\"avatarUrl\":\"https://img.example.com/a.jpg\"}";
+        when(auth.updateProfile(eq(USER), any(), any(), any(), any()))
+                .thenReturn(new AuthService.UserView(USER, "jan@example.com", "Jan", "K", Role.DRIVER, 0, "https://img.example.com/a.jpg"));
+
+        mvc.perform(put("/api/auth/profile").contentType("application/json").content(body)).andExpect(status().isUnauthorized());
+        mvc.perform(put("/api/auth/profile").header("Authorization", "Bearer " + token(USER, 3600))
+                        .contentType("application/json").content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.avatarUrl").value("https://img.example.com/a.jpg"));
+        mvc.perform(put("/api/auth/profile").header("Authorization", "Bearer " + token(USER, 3600))
+                        .contentType("application/json").content("{\"firstName\":\"\",\"lastName\":\"K\",\"avatarUrl\":\"javascript:x\"}"))
+                .andExpect(status().isBadRequest());
     }
 
     @Test

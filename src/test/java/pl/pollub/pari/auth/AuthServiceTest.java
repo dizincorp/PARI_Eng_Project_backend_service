@@ -13,6 +13,7 @@ import pl.pollub.pari.auth.service.AuthService;
 import pl.pollub.pari.common.exception.AuthenticationFailedException;
 import pl.pollub.pari.common.exception.ConflictException;
 import pl.pollub.pari.common.exception.ForbiddenException;
+import pl.pollub.pari.common.security.PhoneHasher;
 import pl.pollub.pari.support.DbTestBase;
 import pl.pollub.pari.user.domain.Role;
 import pl.pollub.pari.user.domain.User;
@@ -25,7 +26,7 @@ import java.time.ZoneOffset;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-@Import({AuthService.class, JwtConfig.class, AuthServiceTest.Time.class})
+@Import({AuthService.class, JwtConfig.class, PhoneHasher.class, AuthServiceTest.Time.class})
 class AuthServiceTest extends DbTestBase {
 
     private static final Instant NOW = Instant.parse("2029-12-01T00:00:00Z");
@@ -97,6 +98,52 @@ class AuthServiceTest extends DbTestBase {
         em.flush();
 
         assertThatThrownBy(() -> auth.login("jan@example.com", "SecurePassword123!")).isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
+    void aPhoneNumberCanBelongToOneAccountWhateverItsFormatting() {
+        auth.register("a@example.com", "SecurePassword123!", "A", "A", "+48 501-234-567", Role.DRIVER);
+
+        assertThatThrownBy(() -> auth.register("b@example.com", "SecurePassword123!", "B", "B", "+48501234567", Role.DRIVER))
+                .isInstanceOfSatisfying(ConflictException.class, e -> assertThat(e.getErrorCode()).isEqualTo("PHONE_ALREADY_REGISTERED"));
+        assertThat(auth.register("c@example.com", "SecurePassword123!", "C", "C", null, Role.DRIVER)).isNotNull();
+        assertThat(auth.register("d@example.com", "SecurePassword123!", "D", "D", "", Role.DRIVER)).isNotNull();
+    }
+
+    @Test
+    void profileUpdateChangesNamesPhoneAndAvatar() {
+        AuthService.UserView user = auth.register("a@example.com", "SecurePassword123!", "A", "A", null, Role.DRIVER);
+
+        AuthService.UserView updated = auth.updateProfile(user.id(), " Jan ", "Kowalski", "+48501234567", "https://img.example.com/a.jpg");
+
+        assertThat(updated.firstName()).isEqualTo("Jan");
+        assertThat(updated.lastName()).isEqualTo("Kowalski");
+        assertThat(updated.avatarUrl()).isEqualTo("https://img.example.com/a.jpg");
+        User stored = users.findById(user.id()).orElseThrow();
+        assertThat(stored.getPhone()).isEqualTo("+48501234567");
+        assertThat(stored.isPhoneVerified()).isFalse();
+    }
+
+    @Test
+    void profileUpdateRefusesAPhoneOfAnotherAccountButAllowsKeepingYourOwn() {
+        AuthService.UserView first = auth.register("a@example.com", "SecurePassword123!", "A", "A", "+48501234567", Role.DRIVER);
+        AuthService.UserView second = auth.register("b@example.com", "SecurePassword123!", "B", "B", null, Role.DRIVER);
+
+        assertThatThrownBy(() -> auth.updateProfile(second.id(), "B", "B", "+48 501 234 567", null))
+                .isInstanceOfSatisfying(ConflictException.class, e -> assertThat(e.getErrorCode()).isEqualTo("PHONE_ALREADY_REGISTERED"));
+        assertThat(auth.updateProfile(first.id(), "A2", "A", "+48501234567", null).firstName()).isEqualTo("A2");
+    }
+
+    @Test
+    void emptyPhoneAndAvatarAreCleared() {
+        AuthService.UserView user = auth.register("a@example.com", "SecurePassword123!", "A", "A", "+48501234567", Role.DRIVER);
+        auth.updateProfile(user.id(), "A", "A", "+48501234567", "https://img.example.com/a.jpg");
+
+        AuthService.UserView cleared = auth.updateProfile(user.id(), "A", "A", "", "");
+
+        assertThat(cleared.avatarUrl()).isNull();
+        assertThat(users.findById(user.id()).orElseThrow().getPhone()).isNull();
+        assertThat(auth.register("b@example.com", "SecurePassword123!", "B", "B", "+48501234567", Role.DRIVER)).isNotNull();
     }
 
     @TestConfiguration
