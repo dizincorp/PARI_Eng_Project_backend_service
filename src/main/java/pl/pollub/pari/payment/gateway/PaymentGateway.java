@@ -16,6 +16,9 @@ public interface PaymentGateway {
     /** Returns money of an earlier charge to the driver. */
     Result refund(String chargeProviderRef, Money amount);
 
+    /** Pays money out to the owner's bank account (IBAN). Idempotent per {@code idempotencyKey}, like {@link #charge}. */
+    Result payout(Money amount, String iban, String idempotencyKey);
+
     /** Outcome of a provider call. {@code providerRef} is set on success, {@code failureReason} on failure. */
     record Result(boolean succeeded, String providerRef, String failureReason) {
 
