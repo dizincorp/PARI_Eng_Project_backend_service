@@ -54,6 +54,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/spots", "/api/spots/{id}", "/api/spots/{id}/reviews",
                                 "/api/spots/{id}/availability-rules").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/reservations/quote").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/media/**").permitAll()
                         .requestMatchers("/error").permitAll()
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(o -> o
