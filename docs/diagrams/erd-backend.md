@@ -112,7 +112,7 @@ erDiagram
         uuid vehicle_id FK
         timestamptz starts_at
         timestamptz ends_at
-        string status "PENDING_PAYMENT|PENDING_APPROVAL|CONFIRMED|IN_PROGRESS|COMPLETED|CANCELLED|REJECTED"
+        string status "PENDING_PAYMENT|PENDING_APPROVAL|CONFIRMED|IN_PROGRESS|COMPLETED|CANCELLED|REJECTED|EXPIRED"
         int hourly_rate_minor "snapshot"
         int spot_cost_minor
         int service_fee_minor

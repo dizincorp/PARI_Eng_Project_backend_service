@@ -134,6 +134,14 @@ public class Reservation extends BaseEntity {
         this.cancelledAt = now;
     }
 
+    /** The owner did not decide in time; the driver is refunded by the service. */
+    public void expire(Instant now) {
+        requireStatus("expire", ReservationStatus.PENDING_APPROVAL);
+        this.status = ReservationStatus.EXPIRED;
+        this.cancelReason = "The owner did not respond in time";
+        this.cancelledAt = now;
+    }
+
     /** True when the given PIN or QR token is the one issued for this reservation. */
     public boolean matchesAccessCode(String pin, String qr) {
         return (pin != null && pin.equals(pinCode)) || (qr != null && qr.equals(qrToken));
@@ -174,6 +182,14 @@ public class Reservation extends BaseEntity {
     /** True while the reservation keeps the time slot taken (same set as the database exclusion constraint). */
     public boolean holdsSlot() {
         return status.holdsSlot();
+    }
+
+    /** Whole minutes (rounded up) between the reserved end and the check-out; 0 when on time. */
+    public long overstayMinutes() {
+        if (checkOutAt == null || !checkOutAt.isAfter(period.end())) {
+            return 0;
+        }
+        return (java.time.Duration.between(period.end(), checkOutAt).toSeconds() + 59) / 60;
     }
 
     /** True when the driver is still checked in after the reserved end. */

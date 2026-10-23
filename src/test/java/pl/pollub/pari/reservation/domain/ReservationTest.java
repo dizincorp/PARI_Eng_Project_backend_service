@@ -89,12 +89,40 @@ class ReservationTest {
     }
 
     @Test
+    void aPendingRequestCanExpireAndThenNoLongerHoldsTheSlot() {
+        reservation.markPaid(false);
+
+        reservation.expire(START.minusSeconds(60));
+
+        assertThat(reservation.getStatus()).isEqualTo(ReservationStatus.EXPIRED);
+        assertThat(reservation.getCancelledAt()).isEqualTo(START.minusSeconds(60));
+        assertThat(reservation.holdsSlot()).isFalse();
+    }
+
+    @Test
+    void onlyAPendingApprovalCanExpire() {
+        reservation.markPaid(true);
+
+        assertThatThrownBy(() -> reservation.expire(START)).isInstanceOf(IllegalStateTransitionException.class);
+    }
+
+    @Test
+    void overstayMinutesRoundUpAndAreZeroWhenOnTime() {
+        reservation.markPaid(true);
+        reservation.checkIn(START);
+        reservation.checkOut(END.plusSeconds(61));
+
+        assertThat(reservation.overstayMinutes()).isEqualTo(2);
+    }
+
+    @Test
     void checkOutWithoutOverstayCostsTheSpotCost() {
         reservation.markPaid(true);
         reservation.checkIn(START);
 
         reservation.checkOut(END.minusSeconds(60));
 
+        assertThat(reservation.overstayMinutes()).isZero();
         assertThat(reservation.getStatus()).isEqualTo(ReservationStatus.COMPLETED);
         assertThat(reservation.getFinalCost()).isEqualTo(Money.pln(2000));
         assertThat(reservation.holdsSlot()).isFalse();

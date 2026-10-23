@@ -185,32 +185,6 @@ public class SpotService {
         spot.archive();
     }
 
-    /** Fails with 404 or 403 unless the caller may manage the space; lets uploads be refused before a file is written. */
-    @Transactional(readOnly = true)
-    public void requireManageable(UUID userId, UUID spotId) {
-        manageableSpot(userId, spotId);
-    }
-
-    /** Attaches an already stored image as the last photo of the space (owner or ADMIN). */
-    @Transactional
-    public PhotoView addPhoto(UUID userId, UUID spotId, String storageKey, String url) {
-        ParkingSpot spot = manageableSpot(userId, spotId);
-        SpotPhoto photo = spot.addPhoto(storageKey);
-        spots.flush();
-        return new PhotoView(photo.getId(), storageKey, url, photo.getPosition());
-    }
-
-    /** Detaches a photo (owner or ADMIN) and returns its storage key so the caller can delete the file. */
-    @Transactional
-    public String removePhoto(UUID userId, UUID spotId, UUID photoId) {
-        ParkingSpot spot = manageableSpot(userId, spotId);
-        SpotPhoto photo = spot.getPhotos().stream().filter(p -> photoId.equals(p.getId())).findFirst()
-                .orElseThrow(() -> new NotFoundException("Photo not found"));
-        spot.removePhoto(photo);
-        spots.flush();
-        return photo.getStorageKey();
-    }
-
     /** Puts a deactivated space back on the market. */
     @Transactional
     public SpotView activate(UUID ownerId, UUID spotId) {

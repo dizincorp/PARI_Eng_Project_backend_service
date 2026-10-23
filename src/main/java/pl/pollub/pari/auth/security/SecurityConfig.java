@@ -51,6 +51,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/register", "/api/auth/login").permitAll()
                         .requestMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs", "/v3/api-docs/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/spots/mine").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/spots/events").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/spots", "/api/spots/{id}", "/api/spots/{id}/reviews",
                                 "/api/spots/{id}/availability-rules").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/reservations/quote").permitAll()

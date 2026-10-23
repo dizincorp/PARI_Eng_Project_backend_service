@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import pl.pollub.pari.payment.service.PaymentFailedException;
 import pl.pollub.pari.reservation.domain.ReservationStatus;
+import pl.pollub.pari.reservation.service.CheckOutView;
 import pl.pollub.pari.reservation.service.PricingService;
 import pl.pollub.pari.reservation.service.ReservationService;
 import pl.pollub.pari.reservation.service.ReservationView;
@@ -130,9 +131,9 @@ public class ReservationController {
         return reservations.checkIn(userId, id, r.pinCode(), r.qrToken());
     }
 
-    /** Ends the parking session; time over the reserved end is charged as a penalty. */
+    /** Ends the parking session; time over the reserved end plus the grace period is charged as a penalty. */
     @PostMapping("/{id}/check-out")
-    public ReservationView checkOut(@CurrentUserId UUID userId, @PathVariable UUID id) {
+    public CheckOutView checkOut(@CurrentUserId UUID userId, @PathVariable UUID id) {
         return reservations.checkOut(userId, id);
     }
 }

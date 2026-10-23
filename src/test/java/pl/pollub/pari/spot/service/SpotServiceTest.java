@@ -208,30 +208,6 @@ class SpotServiceTest extends ServiceTestBase {
         assertThatThrownBy(() -> service.archive(persistUser(Role.OWNER).getId(), id)).isInstanceOf(ForbiddenException.class);
     }
 
-    @Test
-    void ownerAndAdminCanAddAndRemovePhotos() {
-        UUID id = service.create(owner.getId(), command(true, false, Set.of())).id();
-        User admin = persistUser(Role.ADMIN);
-
-        SpotService.PhotoView first = service.addPhoto(owner.getId(), id, "spots/c.jpg", "http://x/media/spots/c.jpg");
-        SpotService.PhotoView second = service.addPhoto(admin.getId(), id, "spots/d.jpg", "http://x/media/spots/d.jpg");
-
-        assertThat(first.id()).isNotNull();
-        assertThat(second.position()).isEqualTo(3);
-        assertThat(service.removePhoto(owner.getId(), id, first.id())).isEqualTo("spots/c.jpg");
-        assertThat(service.get(id, owner.getId()).photoKeys()).containsExactly("spots/a.jpg", "spots/b.jpg", "spots/d.jpg");
-    }
-
-    @Test
-    void strangersCannotChangePhotosAndUnknownPhotosAre404() {
-        UUID id = service.create(owner.getId(), command(true, false, Set.of())).id();
-        User stranger = persistUser(Role.OWNER);
-
-        assertThatThrownBy(() -> service.addPhoto(stranger.getId(), id, "spots/c.jpg", "u")).isInstanceOf(ForbiddenException.class);
-        assertThatThrownBy(() -> service.requireManageable(stranger.getId(), id)).isInstanceOf(ForbiddenException.class);
-        assertThatThrownBy(() -> service.removePhoto(owner.getId(), id, UUID.randomUUID())).isInstanceOf(NotFoundException.class);
-    }
-
     private static CreateSpotCommand command(boolean declared, boolean verification, Set<String> amenities) {
         return build(Money.pln(1250), declared, verification, amenities);
     }

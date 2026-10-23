@@ -17,10 +17,13 @@ import pl.pollub.pari.payment.gateway.MockPaymentGateway;
 import pl.pollub.pari.payment.repository.PaymentRepository;
 import pl.pollub.pari.payment.repository.PayoutRepository;
 import pl.pollub.pari.common.domain.Money;
+import pl.pollub.pari.notification.service.NotificationService;
+import pl.pollub.pari.notification.service.NotificationView;
 import pl.pollub.pari.reservation.domain.Reservation;
 import pl.pollub.pari.reservation.domain.ReservationStatus;
 import pl.pollub.pari.reservation.service.ReservationService.BookCommand;
 import pl.pollub.pari.reservation.service.ReservationService.BookingResult;
+import pl.pollub.pari.spot.domain.Occupancy;
 import pl.pollub.pari.spot.domain.ParkingSpot;
 import pl.pollub.pari.support.ServiceTestBase;
 import pl.pollub.pari.user.domain.PaymentMethod;
@@ -51,6 +54,8 @@ class ReservationServiceTest extends ServiceTestBase {
     PaymentRepository payments;
     @Autowired
     PayoutRepository payouts;
+    @Autowired
+    NotificationService notifications;
 
     User owner;
     User driver;
@@ -265,12 +270,12 @@ class ReservationServiceTest extends ServiceTestBase {
         ReservationView running = confirmed(NOW.minusSeconds(3600), NOW.plusSeconds(3600));
         service.checkIn(driver.getId(), running.id(), running.pinCode(), null);
 
-        ReservationView done = service.checkOut(driver.getId(), running.id());
+        CheckOutView done = service.checkOut(driver.getId(), running.id());
 
         assertThat(done.status()).isEqualTo(ReservationStatus.COMPLETED);
-        assertThat(done.checkOutAt()).isEqualTo(NOW);
-        assertThat(done.overstayPenalty()).isNull();
-        assertThat(done.finalCost()).isEqualByComparingTo("20.00");
+        assertThat(done.actualCheckoutAt()).isEqualTo(NOW);
+        assertThat(done.overstayPenaltyFee()).isEqualByComparingTo("0");
+        assertThat(done.totalFinalAmount()).isEqualByComparingTo("20.00");
         assertThatThrownBy(() -> service.activeSession(driver.getId())).isInstanceOf(NotFoundException.class);
     }
 
@@ -285,10 +290,10 @@ class ReservationServiceTest extends ServiceTestBase {
         overdue.checkIn(NOW.minusSeconds(2 * 3600));
         em.flush();
 
-        ReservationView done = service.checkOut(driver.getId(), overdue.getId());
+        CheckOutView done = service.checkOut(driver.getId(), overdue.getId());
 
-        assertThat(done.overstayPenalty()).isEqualByComparingTo("22.50");
-        assertThat(done.finalCost()).isEqualByComparingTo(overdue.getSpotCost().add(Money.pln(2250)).toDecimal());
+        assertThat(done.overstayPenaltyFee()).isEqualByComparingTo("22.50");
+        assertThat(done.totalFinalAmount()).isEqualByComparingTo(overdue.getSpotCost().add(Money.pln(2250)).toDecimal());
         assertThat(payments.findByReservationIdOrderByCreatedAtAsc(overdue.getId()))
                 .extracting(Payment::getType, Payment::getStatus)
                 .containsExactly(tuple(PaymentType.PENALTY, PaymentStatus.SUCCEEDED));
@@ -301,12 +306,112 @@ class ReservationServiceTest extends ServiceTestBase {
         overdue.checkIn(NOW.minusSeconds(2 * 3600));
         em.flush();
 
-        ReservationView done = service.checkOut(driver.getId(), overdue.getId());
+        CheckOutView done = service.checkOut(driver.getId(), overdue.getId());
 
         assertThat(done.status()).isEqualTo(ReservationStatus.COMPLETED);
         assertThat(payments.findByReservationIdOrderByCreatedAtAsc(overdue.getId()))
                 .extracting(Payment::getType, Payment::getStatus)
                 .containsExactly(tuple(PaymentType.PENALTY, PaymentStatus.FAILED));
+    }
+
+    @Test
+    void checkInOccupiesTheSpotAndCheckOutFreesIt() {
+        ReservationView running = confirmed(NOW.minusSeconds(3600), NOW.plusSeconds(3600));
+        assertThat(spot.getOccupancy()).isEqualTo(Occupancy.FREE);
+
+        service.checkIn(driver.getId(), running.id(), running.pinCode(), null);
+        assertThat(spot.getOccupancy()).isEqualTo(Occupancy.OCCUPIED);
+
+        service.checkOut(driver.getId(), running.id());
+        assertThat(spot.getOccupancy()).isEqualTo(Occupancy.FREE);
+    }
+
+    @Test
+    void stayingWithinTheGracePeriodCostsNoPenaltyAndNoOwnerAlert() {
+        Reservation late = persistReservation(spot, driver, vehicle, NOW.minusSeconds(3 * 3600), NOW.minusSeconds(10 * 60));
+        late.markPaid(true);
+        late.checkIn(NOW.minusSeconds(2 * 3600));
+        em.flush();
+
+        CheckOutView done = service.checkOut(driver.getId(), late.getId());
+
+        assertThat(done.overstayMinutes()).isEqualTo(10);
+        assertThat(done.overstayPenaltyFee()).isEqualByComparingTo("0");
+        assertThat(done.totalFinalAmount()).isEqualByComparingTo(done.baseCost());
+        assertThat(payments.findByReservationIdOrderByCreatedAtAsc(late.getId())).isEmpty();
+        assertThat(notificationTypes(owner)).doesNotContain("OVERSTAY_ALERT");
+    }
+
+    @Test
+    void overstayingBeyondTheGraceReturnsTheTicketFieldsAndAlertsTheOwner() {
+        // ended 150 minutes ago, rate 10.00/h: penalty 2.5 h * 10.00 * 1.5 = 37.50, base cost is the booked 20.00
+        Reservation late = persistReservation(spot, driver, vehicle, NOW.minusSeconds(4 * 3600), NOW.minusSeconds(150 * 60));
+        late.markPaid(true);
+        late.checkIn(NOW.minusSeconds(3 * 3600));
+        em.flush();
+
+        CheckOutView done = service.checkOut(driver.getId(), late.getId());
+
+        assertThat(done.status()).isEqualTo(ReservationStatus.COMPLETED);
+        assertThat(done.actualCheckoutAt()).isEqualTo(NOW);
+        assertThat(done.plannedEndsAt()).isEqualTo(NOW.minusSeconds(150 * 60));
+        assertThat(done.overstayMinutes()).isEqualTo(150);
+        assertThat(done.baseCost()).isEqualByComparingTo("20.00");
+        assertThat(done.overstayPenaltyFee()).isEqualByComparingTo("37.50");
+        assertThat(done.totalFinalAmount()).isEqualByComparingTo("57.50");
+        assertThat(notificationTypes(owner)).contains("OVERSTAY_ALERT");
+    }
+
+    @Test
+    void bookingNotifiesTheDriverWithThePinAndTheOwnerAboutTheReservation() {
+        ReservationView booked = book(driver, T10, T12, VISA).reservation();
+
+        assertThat(notifications.list(driver.getId(), false, 0, 10)).singleElement().satisfies(n -> {
+            assertThat(n.type()).isEqualTo("RESERVATION_CONFIRMED");
+            assertThat(n.message()).contains("PIN").contains(booked.pinCode());
+            assertThat(n.read()).isFalse();
+        });
+        assertThat(notificationTypes(owner)).containsExactly("NEW_RESERVATION");
+    }
+
+    @Test
+    void aRequestNotifiesTheOwnerAndAcceptingNotifiesTheDriver() {
+        spot.setAutoAccept(false);
+        ReservationView pending = book(driver, T10, T12, VISA).reservation();
+        assertThat(notificationTypes(owner)).containsExactly("NEW_RESERVATION_REQUEST");
+        assertThat(notificationTypes(driver)).isEmpty();
+
+        service.accept(owner.getId(), pending.id());
+
+        assertThat(notificationTypes(driver)).containsExactly("RESERVATION_CONFIRMED");
+    }
+
+    @Test
+    void rejectingAndCancellingNotifyTheOtherParty() {
+        spot.setAutoAccept(false);
+        ReservationView rejected = book(driver, T10, T12, VISA).reservation();
+        service.reject(owner.getId(), rejected.id(), "No");
+        assertThat(notificationTypes(driver)).containsExactly("RESERVATION_REJECTED");
+
+        spot.setAutoAccept(true);
+        ReservationView booked = book(driver, T10, T12, VISA).reservation();
+        service.cancel(driver.getId(), booked.id(), "Plans changed");
+        assertThat(notificationTypes(owner)).contains("RESERVATION_CANCELLED");
+        assertThat(notificationTypes(driver)).doesNotContain("RESERVATION_CANCELLED");
+    }
+
+    @Test
+    void checkInNotifiesTheOwner() {
+        ReservationView running = confirmed(NOW.minusSeconds(3600), NOW.plusSeconds(3600));
+
+        service.checkIn(driver.getId(), running.id(), running.pinCode(), null);
+
+        assertThat(notificationTypes(owner)).containsExactly("DRIVER_CHECKED_IN");
+    }
+
+    private List<String> notificationTypes(User who) {
+        em.flush();
+        return notifications.list(who.getId(), false, 0, 20).stream().map(NotificationView::type).toList();
     }
 
     /** A paid, confirmed reservation for the given period (booking itself only accepts future starts). */

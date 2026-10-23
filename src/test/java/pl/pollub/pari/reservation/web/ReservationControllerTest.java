@@ -15,6 +15,7 @@ import pl.pollub.pari.common.exception.ForbiddenException;
 import pl.pollub.pari.common.exception.NotFoundException;
 import pl.pollub.pari.common.web.ApiExceptionHandler;
 import pl.pollub.pari.reservation.domain.ReservationStatus;
+import pl.pollub.pari.reservation.service.CheckOutView;
 import pl.pollub.pari.reservation.service.ReservationService;
 import pl.pollub.pari.reservation.service.ReservationView;
 
@@ -104,7 +105,9 @@ class ReservationControllerTest {
     @Test
     void checkInAndCheckOutReturnTheReservation() throws Exception {
         when(reservations.checkIn(any(), any(), any(), any())).thenReturn(view(ReservationStatus.IN_PROGRESS));
-        when(reservations.checkOut(any(), any())).thenReturn(view(ReservationStatus.COMPLETED));
+        when(reservations.checkOut(any(), any())).thenReturn(new CheckOutView(UUID.randomUUID(), "RSV-20291201-ABCDE",
+                ReservationStatus.COMPLETED, Instant.parse("2026-10-22T16:30:00Z"), Instant.parse("2026-10-22T14:00:00Z"), 150,
+                new BigDecimal("30.00"), new BigDecimal("45.00"), new BigDecimal("75.00"), "PLN"));
         String id = UUID.randomUUID().toString();
 
         mvc.perform(post("/api/reservations/" + id + "/check-in").header("X-User-Id", USER)
@@ -113,7 +116,13 @@ class ReservationControllerTest {
                 .andExpect(jsonPath("$.status").value("IN_PROGRESS"));
         mvc.perform(post("/api/reservations/" + id + "/check-out").header("X-User-Id", USER))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("COMPLETED"));
+                .andExpect(jsonPath("$.status").value("COMPLETED"))
+                .andExpect(jsonPath("$.actualCheckoutAt").value("2026-10-22T16:30:00Z"))
+                .andExpect(jsonPath("$.plannedEndsAt").value("2026-10-22T14:00:00Z"))
+                .andExpect(jsonPath("$.overstayMinutes").value(150))
+                .andExpect(jsonPath("$.baseCost").value(30.00))
+                .andExpect(jsonPath("$.overstayPenaltyFee").value(45.00))
+                .andExpect(jsonPath("$.totalFinalAmount").value(75.00));
     }
 
     @Test

@@ -29,6 +29,7 @@ class PricingServiceTest {
         when(settings.decimal("service_fee_rate")).thenReturn(new BigDecimal("0.05"));
         when(settings.decimal("commission_rate")).thenReturn(new BigDecimal("0.10"));
         when(settings.decimal("overstay_penalty_multiplier")).thenReturn(new BigDecimal("1.50"));
+        when(settings.integer("overstay_grace_minutes")).thenReturn(15);
     }
 
     @Test
@@ -66,8 +67,17 @@ class PricingServiceTest {
     void overstayIsChargedAtTheMultipliedRateProratedByTheStartedMinute() {
         assertThat(pricing.overstayPenalty(Money.pln(1000), Duration.ofMinutes(60))).isEqualTo(Money.pln(1500));
         assertThat(pricing.overstayPenalty(Money.pln(1000), Duration.ofMinutes(30))).isEqualTo(Money.pln(750));
-        // 61 seconds count as two started minutes: 2/60 h * 10.00 * 1.5 = 0.50
-        assertThat(pricing.overstayPenalty(Money.pln(1000), Duration.ofSeconds(61))).isEqualTo(Money.pln(50));
+        // 16 min 1 s count as 17 started minutes: 17/60 h * 10.00 * 1.5 = 4.25
+        assertThat(pricing.overstayPenalty(Money.pln(1000), Duration.ofSeconds(16 * 60 + 1))).isEqualTo(Money.pln(425));
+    }
+
+    @Test
+    void nothingIsChargedWithinTheGracePeriodButTheWholeOverstayOnceItIsExceeded() {
+        assertThat(pricing.overstayPenalty(Money.pln(1000), Duration.ofMinutes(15))).isEqualTo(Money.ZERO);
+        // 16 minutes: charged from the reserved end, not from the end of the grace: 16/60 h * 10.00 * 1.5 = 4.00
+        assertThat(pricing.overstayPenalty(Money.pln(1000), Duration.ofMinutes(16))).isEqualTo(Money.pln(400));
+        // the ticket example: 150 min at 12.00/h = 2.5 h * 12.00 * 1.5 = 45.00
+        assertThat(pricing.overstayPenalty(Money.pln(1200), Duration.ofMinutes(150))).isEqualTo(Money.pln(4500));
     }
 
     @Test
