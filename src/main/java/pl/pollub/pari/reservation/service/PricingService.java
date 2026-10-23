@@ -4,15 +4,17 @@ import org.springframework.stereotype.Service;
 import pl.pollub.pari.common.domain.Money;
 import pl.pollub.pari.common.domain.TimeRange;
 import pl.pollub.pari.common.service.PlatformSettings;
+import pl.pollub.pari.premium.repository.PremiumSubscriptionRepository;
 import pl.pollub.pari.spot.domain.ParkingSpot;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Clock;
 import java.time.Duration;
 
 /**
  * Price of a reservation (F13, F18). The spot cost is the hourly rate prorated by the minute. The service fee is added to
- * what the driver pays, the commission is taken from what the owner receives; both rates come from {@code platform_settings}.
+ * what the driver pays, the commission is taken from what the owner receives (zero for Premium owners); both rates come from {@code platform_settings}.
  */
 @Service
 public class PricingService {
@@ -24,9 +26,13 @@ public class PricingService {
     private static final BigDecimal MINUTES_PER_HOUR = BigDecimal.valueOf(60);
 
     private final PlatformSettings settings;
+    private final PremiumSubscriptionRepository subscriptions;
+    private final Clock clock;
 
-    public PricingService(PlatformSettings settings) {
+    public PricingService(PlatformSettings settings, PremiumSubscriptionRepository subscriptions, Clock clock) {
         this.settings = settings;
+        this.subscriptions = subscriptions;
+        this.clock = clock;
     }
 
     /**
@@ -50,7 +56,9 @@ public class PricingService {
         BigDecimal hours = BigDecimal.valueOf(minutes).divide(MINUTES_PER_HOUR, 10, RoundingMode.HALF_UP);
         Money spotCost = hourlyRate.multiply(hours);
         Money serviceFee = spotCost.multiply(settings.decimal("service_fee_rate"));
-        Money commission = spotCost.multiply(settings.decimal("commission_rate"));
+        // Owner Premium (F08, PARI-23): no commission while the plan is active at booking time.
+        boolean premiumOwner = subscriptions.findCurrentOne(spot.getOwner().getId(), clock.instant()).isPresent();
+        Money commission = premiumOwner ? Money.ZERO : spotCost.multiply(settings.decimal("commission_rate"));
         return new Quote(hourlyRate, minutes, spotCost, serviceFee, commission, spotCost.add(serviceFee));
     }
 }

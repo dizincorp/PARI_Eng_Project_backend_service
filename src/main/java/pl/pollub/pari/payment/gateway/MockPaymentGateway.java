@@ -50,6 +50,17 @@ public class MockPaymentGateway implements PaymentGateway {
         return Result.success("mock_re_" + stableId(chargeProviderRef + ":" + amount.amountMinor()));
     }
 
+    @Override
+    public Result payout(Money amount, String iban, String idempotencyKey) {
+        if (iban == null || iban.isBlank()) {
+            return Result.failure("A bank account is required");
+        }
+        if (amount.amountMinor() <= 0) {
+            return Result.failure("Amount must be positive");
+        }
+        return Result.success("mock_po_" + stableId(idempotencyKey));
+    }
+
     private static UUID stableId(String seed) {
         return UUID.nameUUIDFromBytes(seed.getBytes(StandardCharsets.UTF_8));
     }
