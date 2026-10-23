@@ -13,6 +13,7 @@ import pl.pollub.pari.spot.domain.Amenity;
 import pl.pollub.pari.spot.domain.Dimensions;
 import pl.pollub.pari.spot.domain.GeoPoint;
 import pl.pollub.pari.spot.domain.ParkingSpot;
+import pl.pollub.pari.spot.domain.SpotPhoto;
 import pl.pollub.pari.spot.domain.SpotStatus;
 import pl.pollub.pari.spot.repository.AmenityRepository;
 import pl.pollub.pari.spot.repository.ParkingSpotRepository;
@@ -64,6 +65,10 @@ public class SpotService {
             Integer heightCm,
             String accessInstructions,
             Set<String> amenityCodes) {
+    }
+
+    /** A photo attached to a space; {@code url} is the public address of the file. */
+    public record PhotoView(UUID id, String storageKey, String url, int position) {
     }
 
     private final ParkingSpotRepository spots;
@@ -178,6 +183,32 @@ public class SpotService {
             throw new ConflictException("SPOT_HAS_ACTIVE_RESERVATIONS", "Cannot delete spot with active or upcoming reservations.");
         }
         spot.archive();
+    }
+
+    /** Fails with 404 or 403 unless the caller may manage the space; lets uploads be refused before a file is written. */
+    @Transactional(readOnly = true)
+    public void requireManageable(UUID userId, UUID spotId) {
+        manageableSpot(userId, spotId);
+    }
+
+    /** Attaches an already stored image as the last photo of the space (owner or ADMIN). */
+    @Transactional
+    public PhotoView addPhoto(UUID userId, UUID spotId, String storageKey, String url) {
+        ParkingSpot spot = manageableSpot(userId, spotId);
+        SpotPhoto photo = spot.addPhoto(storageKey);
+        spots.flush();
+        return new PhotoView(photo.getId(), storageKey, url, photo.getPosition());
+    }
+
+    /** Detaches a photo (owner or ADMIN) and returns its storage key so the caller can delete the file. */
+    @Transactional
+    public String removePhoto(UUID userId, UUID spotId, UUID photoId) {
+        ParkingSpot spot = manageableSpot(userId, spotId);
+        SpotPhoto photo = spot.getPhotos().stream().filter(p -> photoId.equals(p.getId())).findFirst()
+                .orElseThrow(() -> new NotFoundException("Photo not found"));
+        spot.removePhoto(photo);
+        spots.flush();
+        return photo.getStorageKey();
     }
 
     /** Puts a deactivated space back on the market. */
