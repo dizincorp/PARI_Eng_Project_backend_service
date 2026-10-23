@@ -9,6 +9,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import pl.pollub.pari.auth.security.SecurityConfig;
 import pl.pollub.pari.common.exception.ConflictException;
 import pl.pollub.pari.common.web.ApiExceptionHandler;
 import pl.pollub.pari.review.service.ReviewService;
@@ -29,7 +30,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(ReviewController.class)
-@Import({ApiExceptionHandler.class, ReviewControllerTest.Time.class})
+@Import({SecurityConfig.class, ApiExceptionHandler.class, ReviewControllerTest.Time.class})
 class ReviewControllerTest {
 
     private static final UUID USER = UUID.randomUUID();
