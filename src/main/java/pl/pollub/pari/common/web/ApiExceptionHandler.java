@@ -6,6 +6,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingRequestHeaderException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
@@ -14,6 +17,7 @@ import pl.pollub.pari.common.exception.AuthenticationFailedException;
 import pl.pollub.pari.common.exception.ConflictException;
 import pl.pollub.pari.common.exception.ForbiddenException;
 import pl.pollub.pari.common.exception.NotFoundException;
+import pl.pollub.pari.media.service.FileTooLargeException;
 import pl.pollub.pari.payment.service.PaymentFailedException;
 
 import java.time.Clock;
@@ -70,6 +74,16 @@ public class ApiExceptionHandler {
     @ExceptionHandler({IllegalArgumentException.class, HttpMessageNotReadableException.class,
             MethodArgumentTypeMismatchException.class})
     ResponseEntity<ApiError> badRequest(Exception e) {
+        return error(HttpStatus.BAD_REQUEST, "BAD_REQUEST", e.getMessage());
+    }
+
+    @ExceptionHandler({FileTooLargeException.class, MaxUploadSizeExceededException.class})
+    ResponseEntity<ApiError> tooLarge(Exception e) {
+        return error(HttpStatus.PAYLOAD_TOO_LARGE, "FILE_TOO_LARGE", "The file is larger than 5 MB");
+    }
+
+    @ExceptionHandler({MissingServletRequestPartException.class, MissingServletRequestParameterException.class})
+    ResponseEntity<ApiError> missingPart(Exception e) {
         return error(HttpStatus.BAD_REQUEST, "BAD_REQUEST", e.getMessage());
     }
 
