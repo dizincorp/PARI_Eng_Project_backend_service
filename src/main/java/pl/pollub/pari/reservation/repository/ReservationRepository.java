@@ -81,6 +81,14 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID>,
     /** Unpaid reservations older than the payment timeout (NF08): the scheduler cancels them and frees the slot. */
     List<Reservation> findByStatusAndCreatedAtBefore(ReservationStatus status, Instant createdBefore);
 
+    /** PENDING_APPROVAL requests created at or before {@code createdBefore}, or whose start is not after {@code now} (PARI-38). */
+    @Query("""
+            select r from Reservation r
+            where r.status = pl.pollub.pari.reservation.domain.ReservationStatus.PENDING_APPROVAL
+              and (r.createdAt <= :createdBefore or r.period.start <= :now)
+            """)
+    List<Reservation> findPendingApprovalDueForExpiry(@Param("createdBefore") Instant createdBefore, @Param("now") Instant now);
+
     /** Drivers still checked in after the end of the reservation (F19). */
     List<Reservation> findByStatusAndPeriodEndBefore(ReservationStatus status, Instant now);
 

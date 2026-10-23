@@ -36,11 +36,13 @@ public class PricingService {
     }
 
     /**
-     * Fee for staying past the reserved end (F19): the hourly rate times {@code overstay_penalty_multiplier}, prorated by
-     * the started minute.
+     * Fee for staying past the reserved end (F19, PARI-37): the hourly rate times {@code overstay_penalty_multiplier},
+     * prorated by the started minute. Up to {@code overstay_grace_minutes} over the end nothing is charged; once the
+     * grace is exceeded the whole overstay (counted from the reserved end, not from the end of the grace) is charged.
      */
     public Money overstayPenalty(Money hourlyRate, Duration overstay) {
-        if (overstay.isNegative() || overstay.isZero()) {
+        if (overstay.isNegative() || overstay.isZero()
+                || overstay.compareTo(Duration.ofMinutes(settings.integer("overstay_grace_minutes"))) <= 0) {
             return Money.ZERO;
         }
         long startedMinutes = (overstay.toSeconds() + 59) / 60;

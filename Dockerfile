@@ -9,7 +9,10 @@ COPY src src
 RUN ./gradlew --no-daemon bootJar -x test && mv build/libs/*[!n].jar app.jar
 
 FROM eclipse-temurin:21-jre
-RUN useradd --system --no-create-home pari
+RUN useradd --system --no-create-home pari && mkdir -p /data/media && chown pari /data/media
+# uploaded images (PARI-40); mount a persistent volume here
+VOLUME /data/media
+ENV PARI_MEDIA_DIR=/data/media
 USER pari
 WORKDIR /app
 COPY --from=build /workspace/app.jar app.jar
