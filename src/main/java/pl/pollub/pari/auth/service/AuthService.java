@@ -123,24 +123,29 @@ public class AuthService {
     }
 
     /**
-     * Replaces the editable profile fields; an empty phone number or avatar clears it. The phone number must not belong to
-     * another account. A changed phone number has to be verified again.
+     * Updates the profile. First and last name are always replaced. A phone number or avatar that is {@code null} (left out
+     * of the request) stays as it is; an empty one clears it. The phone number must not belong to another account, and a
+     * changed number has to be verified again.
      */
     @Transactional
     public UserView updateProfile(UUID userId, String firstName, String lastName, String phoneNumber, String avatarUrl) {
         User user = users.findById(userId).orElseThrow(() -> new NotFoundException("User not found"));
         user.setFirstName(firstName.trim());
         user.setLastName(lastName.trim());
-        if (phoneNumber == null || phoneNumber.isBlank()) {
-            user.changePhone(null, null);
-        } else {
-            String hash = phoneHasher.hash(phoneNumber);
-            if (users.existsByPhoneHashAndIdNot(hash, userId)) {
-                throw phoneTaken();
+        if (phoneNumber != null) {
+            if (phoneNumber.isBlank()) {
+                user.changePhone(null, null);
+            } else {
+                String hash = phoneHasher.hash(phoneNumber);
+                if (users.existsByPhoneHashAndIdNot(hash, userId)) {
+                    throw phoneTaken();
+                }
+                user.changePhone(phoneNumber.trim(), hash);
             }
-            user.changePhone(phoneNumber.trim(), hash);
         }
-        user.setAvatarUrl(avatarUrl == null || avatarUrl.isBlank() ? null : avatarUrl.trim());
+        if (avatarUrl != null) {
+            user.setAvatarUrl(avatarUrl.isBlank() ? null : avatarUrl.trim());
+        }
         try {
             users.flush();
         } catch (DataIntegrityViolationException e) {

@@ -135,6 +135,18 @@ class AuthServiceTest extends DbTestBase {
     }
 
     @Test
+    void phoneAndAvatarLeftOutOfTheRequestStayUnchanged() {
+        AuthService.UserView user = auth.register("a@example.com", "SecurePassword123!", "A", "A", "+48501234567", Role.DRIVER);
+        auth.updateProfile(user.id(), "A", "A", null, "https://img.example.com/a.jpg");
+
+        AuthService.UserView renamed = auth.updateProfile(user.id(), "Jan", "Kowalski", null, null);
+
+        assertThat(renamed.firstName()).isEqualTo("Jan");
+        assertThat(renamed.avatarUrl()).isEqualTo("https://img.example.com/a.jpg");
+        assertThat(users.findById(user.id()).orElseThrow().getPhone()).isEqualTo("+48501234567");
+    }
+
+    @Test
     void emptyPhoneAndAvatarAreCleared() {
         AuthService.UserView user = auth.register("a@example.com", "SecurePassword123!", "A", "A", "+48501234567", Role.DRIVER);
         auth.updateProfile(user.id(), "A", "A", "+48501234567", "https://img.example.com/a.jpg");
