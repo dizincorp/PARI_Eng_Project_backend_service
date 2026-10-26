@@ -139,6 +139,32 @@ class SecurityRulesTest {
     }
 
     @Test
+    void changePasswordNeedsATokenAndAValidNewPassword() throws Exception {
+        String body = "{\"currentPassword\":\"OldPassword123!\",\"newPassword\":\"NewPassword123!\"}";
+
+        mvc.perform(post("/api/auth/change-password").contentType("application/json").content(body)).andExpect(status().isUnauthorized());
+        mvc.perform(post("/api/auth/change-password").header("Authorization", "Bearer " + token(USER, 3600))
+                        .contentType("application/json").content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("Password changed"));
+        mvc.perform(post("/api/auth/change-password").header("Authorization", "Bearer " + token(USER, 3600))
+                        .contentType("application/json").content("{\"currentPassword\":\"OldPassword123!\",\"newPassword\":\"short\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errorCode").value("VALIDATION_FAILED"));
+    }
+
+    @Test
+    void aWrongCurrentPasswordReturns400WithItsCode() throws Exception {
+        org.mockito.Mockito.doThrow(new pl.pollub.pari.common.exception.BadRequestException("INVALID_CURRENT_PASSWORD", "The current password is incorrect"))
+                .when(auth).changePassword(eq(USER), any(), any());
+
+        mvc.perform(post("/api/auth/change-password").header("Authorization", "Bearer " + token(USER, 3600))
+                        .contentType("application/json").content("{\"currentPassword\":\"wrong\",\"newPassword\":\"NewPassword123!\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errorCode").value("INVALID_CURRENT_PASSWORD"));
+    }
+
+    @Test
     void swaggerAndTheApiDocsAreOpen() throws Exception {
         mvc.perform(get("/v3/api-docs")).andExpect(status().is(org.hamcrest.Matchers.not(401)));
     }

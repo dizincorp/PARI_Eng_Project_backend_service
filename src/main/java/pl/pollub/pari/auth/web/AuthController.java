@@ -43,6 +43,13 @@ public class AuthController {
             @Size(max = 500) @Pattern(regexp = "^(https?://\\S+)?$", message = "must be an http(s) URL") String avatarUrl) {
     }
 
+    /** The new password must have 8 to 72 characters (BCrypt limit). */
+    public record ChangePasswordRequest(@NotBlank String currentPassword, @NotBlank @Size(min = 8, max = 72) String newPassword) {
+    }
+
+    public record MessageResponse(String message) {
+    }
+
     public record LoginRequest(@NotBlank String email, @NotBlank String password) {
     }
 
@@ -61,6 +68,13 @@ public class AuthController {
     @PostMapping("/login")
     public AuthService.AuthResponse login(@Valid @RequestBody LoginRequest r) {
         return auth.login(r.email(), r.password());
+    }
+
+    /** 400 {@code INVALID_CURRENT_PASSWORD} when the current password is wrong; 401 without a token. */
+    @PostMapping("/change-password")
+    public MessageResponse changePassword(@CurrentUserId UUID userId, @Valid @RequestBody ChangePasswordRequest r) {
+        auth.changePassword(userId, r.currentPassword(), r.newPassword());
+        return new MessageResponse("Password changed");
     }
 
     @PutMapping("/profile")

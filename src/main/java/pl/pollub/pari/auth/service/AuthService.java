@@ -12,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 import pl.pollub.pari.auth.security.JwtConfig;
 import pl.pollub.pari.auth.security.JwtProperties;
 import pl.pollub.pari.common.exception.AuthenticationFailedException;
+import pl.pollub.pari.common.exception.BadRequestException;
 import pl.pollub.pari.common.exception.ConflictException;
 import pl.pollub.pari.common.exception.ForbiddenException;
 import pl.pollub.pari.common.exception.NotFoundException;
@@ -157,6 +158,20 @@ public class AuthService {
             throw phoneTaken();
         }
         return UserView.of(user);
+    }
+
+    /**
+     * Changes the password of the logged-in user after checking the current one. A wrong current password is a 400 with
+     * the code INVALID_CURRENT_PASSWORD. Tokens issued before the change stay valid until they expire (there is no
+     * token revocation yet).
+     */
+    @Transactional
+    public void changePassword(UUID userId, String currentPassword, String newPassword) {
+        User user = users.findById(userId).orElseThrow(() -> new NotFoundException("User not found"));
+        if (!passwordEncoder.matches(currentPassword, user.getPasswordHash())) {
+            throw new BadRequestException("INVALID_CURRENT_PASSWORD", "The current password is incorrect");
+        }
+        user.changePasswordHash(passwordEncoder.encode(newPassword));
     }
 
     private static ConflictException phoneTaken() {
