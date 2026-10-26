@@ -35,7 +35,7 @@ public class AuthController {
             @NotNull Role role) {
     }
 
-    /** Replaces the profile: an empty {@code phoneNumber} or {@code avatarUrl} removes it. */
+    /** Updates the profile: a {@code phoneNumber} or {@code avatarUrl} that is left out stays unchanged, an empty one removes it. */
     public record UpdateProfileRequest(
             @NotBlank @Size(max = 100) String firstName,
             @NotBlank @Size(max = 100) String lastName,
