@@ -16,6 +16,7 @@ import pl.pollub.pari.payment.service.OwnerPayoutService;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 /** Owner balance and withdrawals (F17, F18). */
@@ -48,11 +49,26 @@ public class OwnerPayoutController {
                 b.availableBalance().currency(), b.totalEarned().toDecimal(), b.platformFeesPaid().toDecimal());
     }
 
+    /**
+     * The owner's withdrawals, newest first; an empty list when there are none. Every element carries the balance that is
+     * available now. The IBAN is masked here as everywhere else.
+     */
+    @GetMapping({"/history", "/withdrawals"})
+    public List<WithdrawalResponse> history(@CurrentUserId UUID userId) {
+        List<Withdrawal> list = payouts.history(userId);
+        BigDecimal available = payouts.balance(userId).availableBalance().toDecimal();
+        return list.stream().map(w -> toResponse(w, available)).toList();
+    }
+
     @PostMapping("/withdraw")
     @ResponseStatus(HttpStatus.CREATED)
     public WithdrawalResponse withdraw(@CurrentUserId UUID userId, @Valid @RequestBody WithdrawRequest r) {
         Withdrawal w = payouts.withdraw(userId, r.amount(), r.iban());
+        return toResponse(w, payouts.balance(userId).availableBalance().toDecimal());
+    }
+
+    private static WithdrawalResponse toResponse(Withdrawal w, BigDecimal availableBalance) {
         return new WithdrawalResponse(w.getId(), w.getAmount().toDecimal(), w.getAmount().currency(),
-                w.getStatus().name(), w.maskedIban(), w.getCreatedAt(), payouts.balance(userId).availableBalance().toDecimal());
+                w.getStatus().name(), w.maskedIban(), w.getCreatedAt(), availableBalance);
     }
 }

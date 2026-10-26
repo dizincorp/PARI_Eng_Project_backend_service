@@ -5,9 +5,13 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import pl.pollub.pari.payment.domain.Withdrawal;
 
+import java.util.List;
 import java.util.UUID;
 
 public interface WithdrawalRepository extends JpaRepository<Withdrawal, UUID> {
+
+    /** The owner's withdrawals, newest first. */
+    List<Withdrawal> findByOwnerIdOrderByCreatedAtDesc(UUID ownerId);
 
     /** Minor units the owner has already withdrawn. Native because the amounts are mapped through a converter. */
     @Query(value = "SELECT COALESCE(SUM(amount_minor), 0) FROM withdrawals WHERE owner_id = :ownerId AND status = 'COMPLETED'",
