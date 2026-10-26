@@ -37,16 +37,21 @@ public class AuthService {
     /** Hash of a random password, compared against when the e-mail is unknown so both failures take equally long. */
     private final String dummyHash;
 
+    /** {@code phoneNumber} is the caller's own number (null when none was given); it is never shown to other users. */
     public record UserView(UUID id, String email, String firstName, String lastName, Role role, int loyaltyPoints,
-                           String avatarUrl) {
+                           String avatarUrl, String phoneNumber) {
 
         public UserView(UUID id, String email, String firstName, String lastName, Role role, int loyaltyPoints) {
-            this(id, email, firstName, lastName, role, loyaltyPoints, null);
+            this(id, email, firstName, lastName, role, loyaltyPoints, null, null);
+        }
+
+        public UserView(UUID id, String email, String firstName, String lastName, Role role, int loyaltyPoints, String avatarUrl) {
+            this(id, email, firstName, lastName, role, loyaltyPoints, avatarUrl, null);
         }
 
         static UserView of(User u) {
             return new UserView(u.getId(), u.getEmail(), u.getFirstName(), u.getLastName(), u.getActiveRole(),
-                    u.getLoyaltyPoints(), u.getAvatarUrl());
+                    u.getLoyaltyPoints(), u.getAvatarUrl(), u.getPhone());
         }
     }
 

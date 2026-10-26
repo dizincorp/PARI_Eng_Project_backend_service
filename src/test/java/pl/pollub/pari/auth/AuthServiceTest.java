@@ -135,6 +135,18 @@ class AuthServiceTest extends DbTestBase {
     }
 
     @Test
+    void theUserViewCarriesThePhoneNumberOfTheAccount() {
+        AuthService.UserView registered = auth.register("a@example.com", "SecurePassword123!", "A", "A", "+48 501 234 567", Role.DRIVER);
+        AuthService.UserView withoutPhone = auth.register("b@example.com", "SecurePassword123!", "B", "B", null, Role.DRIVER);
+
+        assertThat(registered.phoneNumber()).isEqualTo("+48 501 234 567");
+        assertThat(auth.me(registered.id()).phoneNumber()).isEqualTo("+48 501 234 567");
+        assertThat(auth.login("a@example.com", "SecurePassword123!").user().phoneNumber()).isEqualTo("+48 501 234 567");
+        assertThat(auth.updateProfile(registered.id(), "A", "A", "+48 600 100 200", null).phoneNumber()).isEqualTo("+48 600 100 200");
+        assertThat(withoutPhone.phoneNumber()).isNull();
+    }
+
+    @Test
     void phoneAndAvatarLeftOutOfTheRequestStayUnchanged() {
         AuthService.UserView user = auth.register("a@example.com", "SecurePassword123!", "A", "A", "+48501234567", Role.DRIVER);
         auth.updateProfile(user.id(), "A", "A", null, "https://img.example.com/a.jpg");
