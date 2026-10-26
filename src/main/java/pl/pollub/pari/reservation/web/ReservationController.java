@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import pl.pollub.pari.payment.service.PaymentFailedException;
+import pl.pollub.pari.reservation.domain.BookingType;
 import pl.pollub.pari.reservation.domain.ReservationStatus;
 import pl.pollub.pari.reservation.service.CheckOutView;
 import pl.pollub.pari.reservation.service.PricingService;
@@ -31,21 +32,29 @@ import java.util.UUID;
 @RequestMapping("/api/reservations")
 public class ReservationController {
 
-    public record QuoteRequest(@NotNull UUID spotId, @NotNull Instant start, @NotNull Instant end) {
+    /**
+     * {@code bookingType} is HOURLY (default), DAILY (whole days) or MONTHLY. For MONTHLY give {@code durationMonths}
+     * (1 to 36) and no {@code end}; a long-term discount applies. The price is always calculated on the server.
+     */
+    public record QuoteRequest(@NotNull UUID spotId, @NotNull Instant start, Instant end, BookingType bookingType,
+                               Integer durationMonths) {
     }
 
-    public record QuoteResponse(long durationMinutes, BigDecimal hourlyRate, BigDecimal spotCost, BigDecimal serviceFee,
-                                BigDecimal total, String currency) {
+    /** {@code baseCost} - {@code discountAmount} = {@code spotCost}; {@code total} = spotCost + serviceFee. */
+    public record QuoteResponse(BookingType bookingType, long durationMinutes, BigDecimal hourlyRate, BigDecimal baseCost,
+                                BigDecimal discountPercent, BigDecimal discountAmount, BigDecimal spotCost,
+                                BigDecimal serviceFee, BigDecimal total, String currency) {
 
-        static QuoteResponse of(PricingService.Quote q) {
-            return new QuoteResponse(q.minutes(), q.hourlyRate().toDecimal(), q.spotCost().toDecimal(),
+        static QuoteResponse of(BookingType type, PricingService.Quote q) {
+            return new QuoteResponse(type == null ? BookingType.HOURLY : type, q.minutes(), q.hourlyRate().toDecimal(),
+                    q.baseCost().toDecimal(), q.discountPercent(), q.discountAmount().toDecimal(), q.spotCost().toDecimal(),
                     q.serviceFee().toDecimal(), q.total().toDecimal(), q.total().currency());
         }
     }
 
     /** {@code paymentMethodToken} is the provider's payment method id. With the mock gateway use pm_card_visa; pm_card_chargeDeclined is declined. */
-    public record BookRequest(@NotNull UUID spotId, @NotNull UUID vehicleId, @NotNull Instant start, @NotNull Instant end,
-                              @NotBlank String paymentMethodToken) {
+    public record BookRequest(@NotNull UUID spotId, @NotNull UUID vehicleId, @NotNull Instant start, Instant end,
+                              @NotBlank String paymentMethodToken, BookingType bookingType, Integer durationMonths) {
     }
 
     public record ReasonRequest(String reason) {
@@ -63,7 +72,7 @@ public class ReservationController {
 
     @PostMapping("/quote")
     public QuoteResponse quote(@Valid @RequestBody QuoteRequest r) {
-        return QuoteResponse.of(reservations.quote(r.spotId(), r.start(), r.end()));
+        return QuoteResponse.of(r.bookingType(), reservations.quote(r.spotId(), r.start(), r.end(), r.bookingType(), r.durationMonths()));
     }
 
     /** Answers 201 with the reservation, or 402 when the payment is declined (the reservation is then saved as CANCELLED). */
@@ -71,7 +80,8 @@ public class ReservationController {
     @ResponseStatus(HttpStatus.CREATED)
     public ReservationView book(@CurrentUserId UUID userId, @Valid @RequestBody BookRequest r) {
         ReservationService.BookingResult result = reservations.book(userId,
-                new ReservationService.BookCommand(r.spotId(), r.vehicleId(), r.start(), r.end(), r.paymentMethodToken()));
+                new ReservationService.BookCommand(r.spotId(), r.vehicleId(), r.start(), r.end(), r.paymentMethodToken(),
+                        r.bookingType() == null ? BookingType.HOURLY : r.bookingType(), r.durationMonths()));
         if (result.paymentFailed()) {
             throw new PaymentFailedException(result.paymentFailureReason());
         }

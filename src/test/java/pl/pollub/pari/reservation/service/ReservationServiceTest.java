@@ -422,6 +422,30 @@ class ReservationServiceTest extends ServiceTestBase {
         return ReservationView.of(reservation, driver.getId());
     }
 
+    @Test
+    void aMonthlyBookingIsPricedOnTheServerWithTheLongTermDiscount() {
+        // 3 months from 2030-01-07 = 90 days = 2160 h at 10.00/h = 21600.00, minus 5% = 20520.00, fee 5% = 1026.00
+        BookingResult result = service.book(driver.getId(), new BookCommand(spot.getId(), vehicle.getId(), T10, null, VISA,
+                pl.pollub.pari.reservation.domain.BookingType.MONTHLY, 3));
+
+        ReservationView view = result.reservation();
+        assertThat(result.paymentFailed()).isFalse();
+        assertThat(view.endsAt()).isEqualTo(Instant.parse("2030-04-07T10:00:00Z"));
+        assertThat(view.spotCost()).isEqualByComparingTo("20520.00");
+        assertThat(view.serviceFee()).isEqualByComparingTo("1026.00");
+        assertThat(view.total()).isEqualByComparingTo("21546.00");
+        assertThat(payments.findByReservationIdOrderByCreatedAtAsc(view.id())).singleElement()
+                .satisfies(p -> assertThat(p.getAmount().amountMinor()).isEqualTo(2_154_600));
+    }
+
+    @Test
+    void theMonthlyQuoteShowsTheDiscountBreakdown() {
+        PricingService.Quote quote = service.quote(spot.getId(), T10, null, pl.pollub.pari.reservation.domain.BookingType.MONTHLY, 6);
+
+        assertThat(quote.discountPercent()).isEqualByComparingTo("10");
+        assertThat(quote.baseCost().amountMinor() - quote.discountAmount().amountMinor()).isEqualTo(quote.spotCost().amountMinor());
+    }
+
     private BookingResult book(User who, Instant start, Instant end, String token) {
         return service.book(who.getId(), new BookCommand(spot.getId(), vehicleOf(who).getId(), start, end, token));
     }

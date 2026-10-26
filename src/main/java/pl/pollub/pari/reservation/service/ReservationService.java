@@ -13,6 +13,7 @@ import pl.pollub.pari.common.exception.ForbiddenException;
 import pl.pollub.pari.common.exception.NotFoundException;
 import pl.pollub.pari.common.service.AuditTrail;
 import pl.pollub.pari.payment.service.PaymentService;
+import pl.pollub.pari.reservation.domain.BookingType;
 import pl.pollub.pari.reservation.domain.Reservation;
 import pl.pollub.pari.reservation.domain.ReservationStatus;
 import pl.pollub.pari.reservation.event.ReservationEvent;
@@ -52,7 +53,13 @@ public class ReservationService {
     private static final SecureRandom RANDOM = new SecureRandom();
 
     /** What the driver sends when booking. {@code paymentMethodToken} is the provider's payment method id (Stripe pm_...). */
-    public record BookCommand(UUID spotId, UUID vehicleId, Instant start, Instant end, String paymentMethodToken) {
+    public record BookCommand(UUID spotId, UUID vehicleId, Instant start, Instant end, String paymentMethodToken,
+                              BookingType bookingType, Integer durationMonths) {
+
+        /** An hourly booking. */
+        public BookCommand(UUID spotId, UUID vehicleId, Instant start, Instant end, String paymentMethodToken) {
+            this(spotId, vehicleId, start, end, paymentMethodToken, BookingType.HOURLY, null);
+        }
     }
 
     /**
@@ -97,11 +104,17 @@ public class ReservationService {
     /** Price preview shown before the driver pays. Checks that the space exists and is bookable, not that the slot is free. */
     @Transactional(readOnly = true)
     public PricingService.Quote quote(UUID spotId, Instant start, Instant end) {
+        return quote(spotId, start, end, BookingType.HOURLY, null);
+    }
+
+    /** Price preview for any booking type (PARI-46); the price is always calculated here, never taken from the client. */
+    @Transactional(readOnly = true)
+    public PricingService.Quote quote(UUID spotId, Instant start, Instant end, BookingType type, Integer durationMonths) {
         ParkingSpot spot = spots.findById(spotId).orElseThrow(() -> new NotFoundException("Parking spot not found"));
         if (!spot.isBookable()) {
             throw new ConflictException("SPOT_NOT_BOOKABLE", "The parking spot is not available for reservations");
         }
-        return pricing.quote(spot, new TimeRange(start, end));
+        return pricing.quote(spot, pricing.periodFor(type, start, end, durationMonths), type, durationMonths);
     }
 
     /**
@@ -128,7 +141,7 @@ public class ReservationService {
         Vehicle vehicle = vehicles.findByIdAndUserId(cmd.vehicleId(), driverId)
                 .orElseThrow(() -> new NotFoundException("Vehicle not found"));
 
-        TimeRange period = new TimeRange(cmd.start(), cmd.end());
+        TimeRange period = pricing.periodFor(cmd.bookingType(), cmd.start(), cmd.end(), cmd.durationMonths());
         if (period.start().isBefore(now)) {
             throw new IllegalArgumentException("A reservation must start in the future");
         }
@@ -139,7 +152,7 @@ public class ReservationService {
             throw slotTaken();
         }
 
-        PricingService.Quote quote = pricing.quote(spot, period);
+        PricingService.Quote quote = pricing.quote(spot, period, cmd.bookingType(), cmd.durationMonths());
         Reservation reservation = new Reservation(newCode(now), spot, driver, vehicle, period, quote.hourlyRate(),
                 quote.spotCost(), quote.serviceFee(), quote.commission());
         try {
