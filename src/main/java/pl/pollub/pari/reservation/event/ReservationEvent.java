@@ -36,13 +36,20 @@ public record ReservationEvent(
         EXPIRED,
         CHECKED_IN,
         /** Check-out after the grace period; the penalty is above zero. */
-        OVERSTAY
+        OVERSTAY,
+        /** The system ended a session the driver did not end (PARI-47); {@code penalty} may be zero. */
+        AUTO_CHECKOUT
     }
 
     public static ReservationEvent of(Type type, Reservation r, UUID actorId) {
         return new ReservationEvent(type, r.getId(), r.getCode(), r.getSpot().getId(), r.getSpot().getName(),
                 r.getDriver().getId(), r.getSpot().getOwner().getId(), actorId,
                 type == Type.BOOKED || type == Type.ACCEPTED ? r.getPinCode() : null, 0, null);
+    }
+
+    public static ReservationEvent autoCheckout(Reservation r, long minutes, BigDecimal penalty) {
+        return new ReservationEvent(Type.AUTO_CHECKOUT, r.getId(), r.getCode(), r.getSpot().getId(), r.getSpot().getName(),
+                r.getDriver().getId(), r.getSpot().getOwner().getId(), null, null, minutes, penalty);
     }
 
     public static ReservationEvent overstay(Reservation r, UUID actorId, long minutes, BigDecimal penalty) {
