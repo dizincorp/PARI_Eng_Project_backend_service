@@ -69,6 +69,31 @@ class ReservationControllerTest {
     }
 
     @Test
+    void aMonthlyQuoteNeedsNoEndAndShowsTheDiscount() throws Exception {
+        org.mockito.Mockito.when(reservations.quote(any(), any(), any(), any(), any())).thenReturn(new pl.pollub.pari.reservation.service.PricingService.Quote(
+                pl.pollub.pari.common.domain.Money.pln(1000), 129_600, pl.pollub.pari.common.domain.Money.pln(1_231_200),
+                pl.pollub.pari.common.domain.Money.pln(61_560), pl.pollub.pari.common.domain.Money.pln(123_120),
+                pl.pollub.pari.common.domain.Money.pln(1_292_760), pl.pollub.pari.common.domain.Money.pln(1_296_000),
+                new BigDecimal("5"), pl.pollub.pari.common.domain.Money.pln(64_800)));
+
+        mvc.perform(post("/api/reservations/quote").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"spotId\":\"" + SPOT + "\",\"start\":\"2030-01-07T10:00:00Z\",\"bookingType\":\"MONTHLY\",\"durationMonths\":3}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.bookingType").value("MONTHLY"))
+                .andExpect(jsonPath("$.baseCost").value(12960.00))
+                .andExpect(jsonPath("$.discountPercent").value(5))
+                .andExpect(jsonPath("$.discountAmount").value(648.00))
+                .andExpect(jsonPath("$.spotCost").value(12312.00));
+    }
+
+    @Test
+    void anInvalidBookingTypeReturns400() throws Exception {
+        mvc.perform(post("/api/reservations/quote").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"spotId\":\"" + SPOT + "\",\"start\":\"2030-01-07T10:00:00Z\",\"bookingType\":\"YEARLY\"}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void aTakenSlotReturns409WithItsErrorCode() throws Exception {
         when(reservations.book(any(), any())).thenThrow(new ConflictException("SPOT_ALREADY_RESERVED", "The selected time is already reserved"));
 
