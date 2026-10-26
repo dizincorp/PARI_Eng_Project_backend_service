@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import pl.pollub.pari.common.domain.IllegalStateTransitionException;
 import pl.pollub.pari.common.exception.AuthenticationFailedException;
+import pl.pollub.pari.common.exception.BadRequestException;
 import pl.pollub.pari.common.exception.ConflictException;
 import pl.pollub.pari.common.exception.ForbiddenException;
 import pl.pollub.pari.common.exception.NotFoundException;
@@ -35,6 +36,11 @@ public class ApiExceptionHandler {
     @ExceptionHandler(NotFoundException.class)
     ResponseEntity<ApiError> notFound(NotFoundException e) {
         return error(HttpStatus.NOT_FOUND, "NOT_FOUND", e.getMessage());
+    }
+
+    @ExceptionHandler(BadRequestException.class)
+    ResponseEntity<ApiError> badRequestWithCode(BadRequestException e) {
+        return error(HttpStatus.BAD_REQUEST, e.getErrorCode(), e.getMessage());
     }
 
     @ExceptionHandler(AuthenticationFailedException.class)

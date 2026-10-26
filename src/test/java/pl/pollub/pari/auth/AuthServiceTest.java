@@ -159,6 +159,27 @@ class AuthServiceTest extends DbTestBase {
     }
 
     @Test
+    void afterAPasswordChangeOnlyTheNewPasswordLogsIn() {
+        AuthService.UserView user = auth.register("a@example.com", "OldPassword123!", "A", "A", null, Role.DRIVER);
+
+        auth.changePassword(user.id(), "OldPassword123!", "NewPassword123!");
+
+        assertThat(auth.login("a@example.com", "NewPassword123!").user().id()).isEqualTo(user.id());
+        assertThatThrownBy(() -> auth.login("a@example.com", "OldPassword123!")).isInstanceOf(AuthenticationFailedException.class);
+        assertThat(users.findById(user.id()).orElseThrow().getPasswordHash()).startsWith("$2").doesNotContain("NewPassword123!");
+    }
+
+    @Test
+    void aWrongCurrentPasswordChangesNothing() {
+        AuthService.UserView user = auth.register("a@example.com", "OldPassword123!", "A", "A", null, Role.DRIVER);
+
+        assertThatThrownBy(() -> auth.changePassword(user.id(), "not-the-password", "NewPassword123!"))
+                .isInstanceOfSatisfying(pl.pollub.pari.common.exception.BadRequestException.class,
+                        e -> assertThat(e.getErrorCode()).isEqualTo("INVALID_CURRENT_PASSWORD"));
+        assertThat(auth.login("a@example.com", "OldPassword123!").user().id()).isEqualTo(user.id());
+    }
+
+    @Test
     void emptyPhoneAndAvatarAreCleared() {
         AuthService.UserView user = auth.register("a@example.com", "SecurePassword123!", "A", "A", "+48501234567", Role.DRIVER);
         auth.updateProfile(user.id(), "A", "A", "+48501234567", "https://img.example.com/a.jpg");
