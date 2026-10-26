@@ -49,6 +49,8 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID>,
                                       @Param("start") Instant start,
                                       @Param("end") Instant end);
 
+    long countByDriverIdAndStatusIn(UUID driverId, Collection<ReservationStatus> statuses);
+
     Page<Reservation> findByDriverId(UUID driverId, Pageable pageable);
 
     Page<Reservation> findByDriverIdAndStatusIn(UUID driverId, Collection<ReservationStatus> statuses, Pageable pageable);
