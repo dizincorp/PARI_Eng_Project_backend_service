@@ -64,11 +64,12 @@ class SecurityRulesTest {
 
     @Test
     void aValidTokenIdentifiesTheCaller() throws Exception {
-        when(auth.me(USER)).thenReturn(new AuthService.UserView(USER, "jan@example.com", "Jan", "K", Role.DRIVER, 0));
+        when(auth.me(USER)).thenReturn(new AuthService.UserView(USER, "jan@example.com", "Jan", "K", Role.DRIVER, 0, null, "+48501234567"));
 
         mvc.perform(get("/api/auth/me").header("Authorization", "Bearer " + token(USER, 3600)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.email").value("jan@example.com"));
+                .andExpect(jsonPath("$.email").value("jan@example.com"))
+                .andExpect(jsonPath("$.phoneNumber").value("+48501234567"));
     }
 
     @Test
