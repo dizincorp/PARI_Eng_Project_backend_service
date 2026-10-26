@@ -229,7 +229,35 @@ public class ReservationService {
     @Transactional
     public CheckOutView checkOut(UUID driverId, UUID reservationId) {
         Reservation reservation = loadForDriver(driverId, reservationId);
-        Instant now = clock.instant();
+        Money penalty = finishSession(reservation, driverId, clock.instant(), "CHECKED_OUT");
+        if (!penalty.isZero()) {
+            events.publishEvent(ReservationEvent.overstay(reservation, driverId, reservation.overstayMinutes(), penalty.toDecimal()));
+        }
+        return CheckOutView.of(reservation);
+    }
+
+    /**
+     * Ends a session the driver forgot to end (PARI-47): the reservation is IN_PROGRESS and its reserved end is at or before
+     * {@code dueBefore} (end plus grace period). Done as the system, so the owner is not asked: the overstay is charged
+     * like in a manual check-out, the space is freed, and both the driver and the owner are notified. The status is
+     * COMPLETED. Does nothing when the driver checked out in the meantime.
+     *
+     * @return true when the session was ended
+     */
+    @Transactional
+    public boolean autoCheckOut(UUID reservationId, Instant dueBefore) {
+        Reservation reservation = reservations.findById(reservationId).orElse(null);
+        if (reservation == null || reservation.getStatus() != ReservationStatus.IN_PROGRESS
+                || reservation.getPeriod().end().isAfter(dueBefore)) {
+            return false;
+        }
+        Money penalty = finishSession(reservation, null, clock.instant(), "AUTO_CHECKED_OUT");
+        events.publishEvent(ReservationEvent.autoCheckout(reservation, reservation.overstayMinutes(), penalty.toDecimal()));
+        return true;
+    }
+
+    /** Overstay penalty, check-out, payment of the penalty, audit and freeing the space; shared by manual and automatic check-out. */
+    private Money finishSession(Reservation reservation, UUID actorId, Instant now, String auditAction) {
         Money penalty = Money.ZERO;
         if (reservation.isOverstaying(now)) {
             penalty = pricing.overstayPenalty(reservation.getHourlyRate(), Duration.between(reservation.getPeriod().end(), now));
@@ -237,17 +265,14 @@ public class ReservationService {
         }
         reservation.checkOut(now);
         if (!penalty.isZero()) {
-            payments.chargePenalty(reservation, penalty, defaultPaymentToken(driverId));
+            payments.chargePenalty(reservation, penalty, defaultPaymentToken(reservation.getDriver().getId()));
         }
-        audit.record(driverId, "Reservation", reservation.getId(), "CHECKED_OUT",
+        audit.record(actorId, "Reservation", reservation.getId(), auditAction,
                 Map.of("code", reservation.getCode(), "penaltyMinor", penalty.amountMinor()));
         ParkingSpot spot = reservation.getSpot();
         spot.release();
         events.publishEvent(new SpotOccupancyChanged(spot.getId(), spot.getOccupancy(), now));
-        if (!penalty.isZero()) {
-            events.publishEvent(ReservationEvent.overstay(reservation, driverId, reservation.overstayMinutes(), penalty.toDecimal()));
-        }
-        return CheckOutView.of(reservation);
+        return penalty;
     }
 
     /** The driver's running parking session; 404 when there is none. */

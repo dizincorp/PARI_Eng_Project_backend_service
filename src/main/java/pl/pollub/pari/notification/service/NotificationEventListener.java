@@ -54,6 +54,16 @@ public class NotificationEventListener {
             }
             case CHECKED_IN -> notify(e, e.ownerId(), "DRIVER_CHECKED_IN", "Kierowca przyjechał",
                     "Kierowca rozpoczął postój na miejscu " + place + " (" + e.code() + ").");
+            case AUTO_CHECKOUT -> {
+                String fee = e.penalty() == null || e.penalty().signum() == 0
+                        ? "" : " Naliczono dopłatę " + e.penalty().toPlainString() + " PLN.";
+                notify(e, e.driverId(), "SESSION_AUTO_ENDED", "Postój zakończony automatycznie",
+                        "Rezerwacja " + e.code() + " miejsca " + place + " dobiegła końca, a postój nie został zakończony. "
+                                + "Zakończyliśmy go za Ciebie (" + e.overstayMinutes() + " min po planowanym końcu)." + fee);
+                notify(e, e.ownerId(), "SESSION_AUTO_ENDED", "Postój zakończony automatycznie",
+                        "Kierowca nie zakończył postoju na miejscu " + place + " (" + e.code() + "), system zakończył go po "
+                                + e.overstayMinutes() + " min od planowanego końca." + fee);
+            }
             case OVERSTAY -> notify(e, e.ownerId(), "OVERSTAY_ALERT", "Przekroczenie czasu postoju",
                     "Kierowca opuścił miejsce " + place + " (" + e.code() + ") " + e.overstayMinutes()
                             + " min po planowanym końcu. Naliczono dopłatę " + e.penalty().toPlainString() + " PLN.");
