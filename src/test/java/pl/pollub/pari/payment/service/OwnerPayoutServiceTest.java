@@ -142,6 +142,29 @@ class OwnerPayoutServiceTest extends ServiceTestBase {
     }
 
     @Test
+    void historyListsTheOwnersWithdrawalsNewestFirstAndOnlyTheirs() {
+        assertThat(service.history(owner.getId())).isEmpty();
+        payout(PayoutStatus.PAID, 1000, 100);
+        Withdrawal older = service.withdraw(owner.getId(), new BigDecimal("2.00"), IBAN);
+        Withdrawal newer = service.withdraw(owner.getId(), new BigDecimal("3.00"), IBAN);
+        em.flush();
+        jdbc.update("update withdrawals set created_at = ? where id = ?", java.sql.Timestamp.from(java.time.Instant.parse("2029-11-01T10:00:00Z")), older.getId());
+        jdbc.update("update withdrawals set created_at = ? where id = ?", java.sql.Timestamp.from(java.time.Instant.parse("2029-11-02T10:00:00Z")), newer.getId());
+        flushAndClear();
+
+        assertThat(service.history(owner.getId())).extracting(Withdrawal::getId).containsExactly(newer.getId(), older.getId());
+        assertThat(service.history(persistUser(Role.OWNER).getId())).isEmpty();
+    }
+
+    @Test
+    void onlyAnOwnerHasAWithdrawalHistory() {
+        User driverOnly = persistUser(Role.DRIVER);
+        em.flush();
+
+        assertThatThrownBy(() -> service.history(driverOnly.getId())).isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
     void onlyAnOwnerCanWithdraw() {
         assertThatThrownBy(() -> service.withdraw(driver.getId(), BigDecimal.ONE, IBAN)).isInstanceOf(ForbiddenException.class);
     }

@@ -58,6 +58,16 @@ public class OwnerPayoutService {
         return new Balance(Money.pln(released - withdrawn), Money.pln(pending), Money.pln(released), Money.pln(fees));
     }
 
+    /** The owner's withdrawals, newest first (empty when there are none). Only owners have a withdrawal history. */
+    @Transactional(readOnly = true)
+    public List<Withdrawal> history(UUID ownerId) {
+        User owner = users.findById(ownerId).orElseThrow(() -> new NotFoundException("User not found"));
+        if (!owner.hasRole(Role.OWNER)) {
+            throw new ForbiddenException("Only an owner has a withdrawal history");
+        }
+        return withdrawals.findByOwnerIdOrderByCreatedAtDesc(ownerId);
+    }
+
     /**
      * Withdraws {@code amount} (PLN, at most two decimals) to the IBAN through the payment gateway. No fee and no limit
      * is applied: the plan defines none. Throws {@link PaymentFailedException} when the provider refuses (nothing is saved).
