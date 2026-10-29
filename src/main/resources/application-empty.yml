@@ -1,0 +1,8 @@
+# Second database variant for local development: SPRING_PROFILES_ACTIVE=local,empty
+# Schema and reference data only (platform_settings, amenities), no demo users or spots, on its own database
+# (service postgres-empty of docker-compose.yml, port 5433). Combine it with "local" for the development keys.
+spring:
+  datasource:
+    url: ${PARI_DB_URL:jdbc:postgresql://localhost:5433/pari}
+  flyway:
+    locations: classpath:db/migration
