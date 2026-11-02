@@ -13,7 +13,7 @@ class DemoDataMigrationTest extends DbTestBase {
 
     @Test
     void demoUsersSpotsAndRulesAreLoaded() {
-        assertThat(jdbc.queryForObject("select count(*) from users", Integer.class)).isEqualTo(3);
+        assertThat(jdbc.queryForObject("select count(*) from users", Integer.class)).isEqualTo(4);
         assertThat(jdbc.queryForObject("select count(*) from parking_spots where status = 'ACTIVE'", Integer.class)).isEqualTo(4);
         assertThat(jdbc.queryForObject("select count(*) from availability_rules", Integer.class)).isEqualTo(28);
         assertThat(jdbc.queryForObject("select count(*) from spot_amenities", Integer.class)).isEqualTo(8);

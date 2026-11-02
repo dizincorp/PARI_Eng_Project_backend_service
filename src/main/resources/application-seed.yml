@@ -1,0 +1,9 @@
+# Optional demo data for local development: SPRING_PROFILES_ACTIVE=local,seed
+# Adds the demo data set (db/dev, see README) on top of the schema, in its own database
+# (service postgres-seeded of docker-compose.yml, port 5433). Without this profile the database is clean.
+# Never load db/dev outside development.
+spring:
+  datasource:
+    url: ${PARI_DB_URL:jdbc:postgresql://localhost:5433/pari}
+  flyway:
+    locations: classpath:db/migration,classpath:db/dev
