@@ -2,13 +2,13 @@
 
 Backend of PARI, a portal for sharing and reserving private parking spaces (engineering degree project, Lublin University of Technology). Java, Spring Boot, PostgreSQL + PostGIS.
 
-Documentation lives in Confluence (space *My Software Team*, page *PARI project documentation*). Repository documentation, ADRs and diagrams are in [docs](docs) ([docs/diagrams](docs/diagrams)); contributor rules are in [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md).
+Documentation lives in Confluence (space *My Software Team*, page *PARI project documentation*). Repository documentation, ADRs and diagrams are in [docs](docs) ([docs/diagrams](docs/diagrams)); contributor rules are in [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md). What the system does today: [backend concepts](docs/backend-concepts.md), [data layer](docs/data-layer.md) ([data dictionary](docs/data-dictionary.md)), [frontend and backend interaction](docs/frontend-backend-interaction.md), [REST API reference](docs/api-reference.md).
 
 ## Current state
 
-The data layer is implemented (Flyway schema, JPA entities with their business rules, repositories), and the main flow runs on top of it: **creating a parking space, searching for one, reserving it and paying for it**. Payments go through a **mock gateway** (no real money, see [ADR 0004](docs/adr/0004-payment-gateway-port-with-mock.md)).
+The backend implements the whole rental flow on top of the Flyway schema: registration and login (JWT), vehicles, parking spaces with photos, weekly availability and blocked periods, map search (PostGIS), booking with server-side pricing (hourly, daily, monthly with discounts), owner approval, check-in with PIN or QR, check-out with overstay penalties, scheduled jobs (expiry of unanswered requests, forced end of forgotten sessions, payout release), soft-escrow payouts and withdrawals, reviews, notifications, live occupancy over SSE, owner and driver analytics, and Premium plans. Payments go through a **mock gateway** (no real money, see [ADR 0004](docs/adr/0004-payment-gateway-port-with-mock.md)).
 
-Authentication is Spring Security with a JWT Bearer token (`/api/auth/register`, `/api/auth/login`, `/api/auth/me`). Not implemented yet: refresh tokens, e-mail and phone verification, check-in and check-out, overstay penalties, the payout release job, reviews, support, verification workflow, notifications, premium, and the real Stripe adapter.
+Not implemented yet: refresh tokens and server-side logout, e-mail and phone verification, password reset, support reports and sanctions, the inspection workflow, extending a reservation, the PDF confirmation, the real Stripe adapter, e-mail and push notifications. The full picture with diagrams is in [docs/backend-concepts.md](docs/backend-concepts.md) and [docs/data-layer.md](docs/data-layer.md).
 
 | Part | Where |
 | --- | --- |

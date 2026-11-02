@@ -4,12 +4,12 @@ Architecture diagrams of the PARI backend, written in [Mermaid](https://mermaid.
 
 | Diagram | File | Shows |
 | --- | --- | --- |
-| Backend ERD | [erd-backend.md](erd-backend.md) | PostgreSQL tables, columns and relations |
+| Backend ERD | [erd-backend.md](erd-backend.md) | PostgreSQL tables, columns and relations (generated from the migrated database, see [../README.md](../README.md#regenerating-the-generated-documents)) |
 | Frontend ERD | [erd-frontend.md](erd-frontend.md) | Client-side view models used by the React screens |
 | Class diagram: domain | [class-domain.md](class-domain.md) | Entities, value objects and their relations |
 | Class diagram: application | [class-application.md](class-application.md) | Controllers, services, ports and adapters, jobs, domain events |
 
-The text explanation of each diagram (entity dictionary, field mapping, status lifecycle, responsibilities) is in the Confluence space *My Software Team*, under *PARI project documentation*:
+The state diagrams and sequence diagrams of the running system are in [../data-layer.md](../data-layer.md), [../backend-concepts.md](../backend-concepts.md) and [../frontend-backend-interaction.md](../frontend-backend-interaction.md). The text explanation of each diagram (entity dictionary, field mapping, status lifecycle, responsibilities) is in the Confluence space *My Software Team*, under *PARI project documentation*:
 
 - PARI data model (ERD): backend and frontend
 - PARI backend class diagram
