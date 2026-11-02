@@ -5,7 +5,7 @@ import pl.pollub.pari.support.DbTestBase;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** The "empty" database variant: only the migrations run, so there are no users or spots, just the reference data the app needs. */
+/** The clean (default) database variant: only the migrations run, so there are no users or spots, just the reference data the app needs. */
 class EmptyDatabaseTest extends DbTestBase {
 
     @Test

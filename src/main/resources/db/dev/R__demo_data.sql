@@ -1,7 +1,7 @@
 -- DEMO DATA for development and manual testing. NOT part of the real schema history.
 --
--- Loaded only when spring.flyway.locations also contains classpath:db/dev (local profile, "seeded" Docker variant).
--- The "empty" variant leaves db/dev out and gets the schema plus the reference data of the migrations only
+-- Loaded only when spring.flyway.locations also contains classpath:db/dev (profile "seed", the "seeded" Docker variant).
+-- The default (clean) variant leaves db/dev out and gets the schema plus the reference data of the migrations only
 -- (platform_settings and amenities).
 --
 -- This is a repeatable migration (R__): Flyway runs it after every versioned migration, so a new real migration

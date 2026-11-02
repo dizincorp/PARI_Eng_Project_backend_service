@@ -1,9 +1,10 @@
-# Local development databases. Two variants, each on its own volume, so they never mix:
-#   seeded (demo users, spots, reservations, payments):  docker compose up -d                  -> localhost:5432
-#                                                        SPRING_PROFILES_ACTIVE=local ./gradlew bootRun
-#   empty (schema and reference data only):              docker compose --profile empty up -d postgres-empty  -> localhost:5433
-#                                                        SPRING_PROFILES_ACTIVE=local,empty ./gradlew bootRun
-# Which variant a database is decides the application at its first start (Flyway locations), see README.
+# Local development databases. The default is a CLEAN database (schema and reference data only, no users); the demo
+# data is optional. Each variant has its own volume, so they never mix:
+#   clean (default):  docker compose up -d                                        -> localhost:5432
+#                     SPRING_PROFILES_ACTIVE=local ./gradlew bootRun
+#   seeded (demo):    docker compose --profile seed up -d postgres-seeded         -> localhost:5433
+#                     SPRING_PROFILES_ACTIVE=local,seed ./gradlew bootRun
+# The variant a database has is decided by the application's first start (Flyway locations), see README.
 services:
   postgres:
     image: postgis/postgis:16-3.5
@@ -22,10 +23,10 @@ services:
       timeout: 3s
       retries: 10
 
-  postgres-empty:
+  postgres-seeded:
     image: postgis/postgis:16-3.5
-    container_name: pari-postgres-empty
-    profiles: ["empty"]
+    container_name: pari-postgres-seeded
+    profiles: ["seed"]
     environment:
       POSTGRES_DB: pari
       POSTGRES_USER: pari
@@ -33,7 +34,7 @@ services:
     ports:
       - "5433:5432"
     volumes:
-      - pari-pgdata-empty:/var/lib/postgresql/data
+      - pari-pgdata-seeded:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U pari -d pari"]
       interval: 5s
@@ -42,4 +43,4 @@ services:
 
 volumes:
   pari-pgdata:
-  pari-pgdata-empty:
+  pari-pgdata-seeded:

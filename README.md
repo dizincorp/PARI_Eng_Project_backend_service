@@ -33,16 +33,16 @@ Unit tests of the domain rules run without Docker; the repository tests need a r
 
 ## Run against a local database
 
-There are two database variants, each on its own Docker volume, so they never mix:
+The default is a **clean** database: schema and reference data only (`platform_settings`, `amenities`), no users, vehicles, spots or reservations. Everything is created through the API. A demo data set is optional. Each variant has its own Docker volume, so they never mix:
 
 | Variant | What is in it | Start the database | Start the backend |
 | --- | --- | --- | --- |
-| **seeded** | schema, reference data and a consistent demo data set (below) | `docker compose up -d` (port 5432) | `SPRING_PROFILES_ACTIVE=local ./gradlew bootRun` |
-| **empty** | schema and reference data only (`platform_settings`, `amenities`), no users | `docker compose --profile empty up -d postgres-empty` (port 5433) | `SPRING_PROFILES_ACTIVE=local,empty ./gradlew bootRun` |
+| **clean** (default) | schema and reference data | `docker compose up -d` (port 5432) | `SPRING_PROFILES_ACTIVE=local ./gradlew bootRun` |
+| **seeded** (optional) | the same plus a consistent demo data set (below) | `docker compose --profile seed up -d postgres-seeded` (port 5433) | `SPRING_PROFILES_ACTIVE=local,seed ./gradlew bootRun` |
 
-On PowerShell set the profile first: `$env:SPRING_PROFILES_ACTIVE = "local"` (or `"local,empty"`), then `./gradlew bootRun`.
+On PowerShell set the profile first: `$env:SPRING_PROFILES_ACTIVE = "local"` (or `"local,seed"`), then `./gradlew bootRun`.
 
-The variant is decided by the Flyway locations: the migrations in `db/migration` always run; `db/dev` (the demo data) only when it is listed in `spring.flyway.locations`. The `local` profile lists it, the `empty` profile removes it. Elsewhere set `SPRING_FLYWAY_LOCATIONS=classpath:db/migration,classpath:db/dev` for seeded or `classpath:db/migration` for empty; never load the demo data in production. A database keeps the variant it was created with: Flyway refuses to start a seeded database without `db/dev`, so switch variants by using the other database, or recreate one with `docker compose down -v`.
+The variant is decided by the Flyway locations: the migrations in `db/migration` always run; `db/dev` (the demo data) only when it is listed in `spring.flyway.locations`, which only the `seed` profile does. Elsewhere set `SPRING_FLYWAY_LOCATIONS=classpath:db/migration,classpath:db/dev` to load it; never do that in production. A database keeps the variant it was created with: Flyway refuses to start a seeded database without `db/dev`, so switch variants by using the other database, or recreate one with `docker compose down -v`.
 
 ### The demo data
 
@@ -60,7 +60,7 @@ The `local` profile contains a development-only encryption key. In every other e
 
 ## API documentation (Swagger UI)
 
-With the app running, open <http://localhost:8080/swagger-ui.html> to browse and try every endpoint. The raw OpenAPI document is at `/v3/api-docs`. Log in with `POST /api/auth/login` (demo user `jan.driver@pari.test` / `Demo1234!` with the seeded database), copy the `token` from the answer and paste it into **Authorize**.
+With the app running, open <http://localhost:8080/swagger-ui.html> to browse and try every endpoint. The raw OpenAPI document is at `/v3/api-docs`. Log in with `POST /api/auth/login` (register first on a clean database; on the seeded one use `jan.driver@pari.test` / `Demo1234!`), copy the `token` from the answer and paste it into **Authorize**.
 
 ## Workflow
 
