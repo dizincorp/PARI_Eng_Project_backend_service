@@ -439,6 +439,23 @@ class ReservationServiceTest extends ServiceTestBase {
     }
 
     @Test
+    void aDailyBookingIsChargedTheOwnersDailyPrice() {
+        spot.setDailyPrice(Money.pln(20_000));               // 200.00 per day instead of 24 x 10.00
+        em.flush();
+
+        BookingResult result = service.book(driver.getId(), new BookCommand(spot.getId(), vehicle.getId(), T10,
+                Instant.parse("2030-01-09T10:00:00Z"), VISA, pl.pollub.pari.reservation.domain.BookingType.DAILY, null));
+
+        ReservationView view = result.reservation();
+        assertThat(result.paymentFailed()).isFalse();
+        assertThat(view.spotCost()).isEqualByComparingTo("400.00");       // two days
+        assertThat(view.serviceFee()).isEqualByComparingTo("20.00");
+        assertThat(view.total()).isEqualByComparingTo("420.00");
+        assertThat(payments.findByReservationIdOrderByCreatedAtAsc(view.id())).singleElement()
+                .satisfies(p -> assertThat(p.getAmount().amountMinor()).isEqualTo(42_000));
+    }
+
+    @Test
     void theMonthlyQuoteShowsTheDiscountBreakdown() {
         PricingService.Quote quote = service.quote(spot.getId(), T10, null, pl.pollub.pari.reservation.domain.BookingType.MONTHLY, 6);
 

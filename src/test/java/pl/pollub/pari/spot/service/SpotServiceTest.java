@@ -144,6 +144,46 @@ class SpotServiceTest extends ServiceTestBase {
     }
 
     @Test
+    void dailyAndMonthlyPricesAreStoredChangedAndRemoved() {
+        SpotView created = service.create(owner.getId(), new CreateSpotCommand("Garage 7", "Covered garage", "ul. Krakowskie Przedmiescie 1",
+                "Lublin", "20-002", null, 51.2465, 22.5684, 500, 250, 200, Money.pln(1250), Money.pln(20_000), Money.pln(300_000),
+                "Gate code", true, Set.of(), List.of(), true, false));
+        assertThat(created.dailyPrice()).isEqualByComparingTo("200.00");
+        assertThat(created.monthlyPrice()).isEqualByComparingTo("3000.00");
+
+        SpotView changed = service.update(owner.getId(), created.id(), new SpotService.UpdateSpotCommand(
+                "Garage 7", null, Money.pln(1250), Money.pln(18_000), null, 500, 250, null, null, null));
+        flushAndClear();
+
+        assertThat(changed.dailyPrice()).isEqualByComparingTo("180.00");
+        assertThat(changed.monthlyPrice()).isNull();                       // the prices are replaced as a whole
+        assertThat(service.get(created.id(), owner.getId()).dailyPrice()).isEqualByComparingTo("180.00");
+        assertThat(service.get(created.id(), owner.getId()).monthlyPrice()).isNull();
+    }
+
+    @Test
+    void aSpaceWithoutDailyAndMonthlyPricesShowsNone() {
+        SpotView created = service.create(owner.getId(), command(true, false, Set.of()));
+
+        assertThat(created.dailyPrice()).isNull();
+        assertThat(created.monthlyPrice()).isNull();
+    }
+
+    @Test
+    void aDailyOrMonthlyPriceThatIsSetMustBePositive() {
+        SpotService.CreateSpotCommand zeroDaily = new CreateSpotCommand("G", null, "ul. 1", "Lublin", "20-002", null, 51.2, 22.5, 500, 250, 200,
+                Money.pln(1250), Money.pln(0), null, null, true, Set.of(), List.of(), true, false);
+        SpotService.CreateSpotCommand zeroMonthly = new CreateSpotCommand("G", null, "ul. 1", "Lublin", "20-002", null, 51.2, 22.5, 500, 250, 200,
+                Money.pln(1250), null, Money.pln(0), null, true, Set.of(), List.of(), true, false);
+        UUID id = service.create(owner.getId(), command(true, false, Set.of())).id();
+
+        assertThatThrownBy(() -> service.create(owner.getId(), zeroDaily)).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("daily");
+        assertThatThrownBy(() -> service.create(owner.getId(), zeroMonthly)).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("monthly");
+        assertThatThrownBy(() -> service.update(owner.getId(), id, new SpotService.UpdateSpotCommand(
+                "G", null, Money.pln(1250), Money.pln(0), null, 500, 250, null, null, null))).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     void anOmittedAmenityListKeepsTheCurrentOnes() {
         UUID id = service.create(owner.getId(), command(true, false, Set.of("COVERED"))).id();
 

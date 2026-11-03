@@ -61,6 +61,16 @@ public class ParkingSpot extends BaseEntity {
     @Column(name = "hourly_price_minor", nullable = false)
     private Money hourlyPrice;
 
+    /** Price of a whole day (24 h) when the owner sets one; {@code null}: a daily booking is priced from the hourly price. */
+    @Setter
+    @Column(name = "daily_price_minor")
+    private Money dailyPrice;
+
+    /** Price of one month when the owner sets one; {@code null}: a monthly booking is priced from the hourly price. */
+    @Setter
+    @Column(name = "monthly_price_minor")
+    private Money monthlyPrice;
+
     @Setter
     @Column(columnDefinition = "text")
     private String accessInstructions;

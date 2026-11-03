@@ -167,6 +167,63 @@ class PricingServiceTest {
         assertThatThrownBy(() -> pricing.periodFor(BookingType.HOURLY, start, null, null)).isInstanceOf(IllegalArgumentException.class);
     }
 
+    @Test
+    void aDailyBookingCostsTheOwnersDailyPriceForEveryDay() {
+        ParkingSpot spot = spotAt(1000);                      // 10.00 per hour would give 240.00 per day
+        spot.setDailyPrice(Money.pln(20_000));                // the owner asks 200.00 per day
+
+        PricingService.Quote quote = pricing.quote(spot, range("2030-01-07T00:00:00Z", "2030-01-09T00:00:00Z"), BookingType.DAILY, null);
+
+        assertThat(quote.baseCost()).isEqualTo(Money.pln(40_000));
+        assertThat(quote.discountAmount()).isEqualTo(Money.ZERO);
+        assertThat(quote.spotCost()).isEqualTo(Money.pln(40_000));
+        assertThat(quote.serviceFee()).isEqualTo(Money.pln(2_000));
+        assertThat(quote.commission()).isEqualTo(Money.pln(4_000));
+        assertThat(quote.total()).isEqualTo(Money.pln(42_000));
+        assertThat(quote.hourlyRate()).isEqualTo(Money.pln(1000));
+    }
+
+    @Test
+    void aMonthlyBookingCostsTheOwnersMonthlyPriceForEveryMonthAndGetsTheDiscount() {
+        ParkingSpot spot = spotAt(1000);
+        spot.setMonthlyPrice(Money.pln(300_000));             // 3000.00 per month
+        Instant start = Instant.parse("2030-01-01T00:00:00Z");
+
+        PricingService.Quote three = quoteMonths(spot, start, 3);
+        PricingService.Quote two = quoteMonths(spot, start, 2);
+
+        assertThat(three.baseCost()).isEqualTo(Money.pln(900_000));
+        assertThat(three.discountPercent()).isEqualByComparingTo("5");
+        assertThat(three.discountAmount()).isEqualTo(Money.pln(45_000));
+        assertThat(three.spotCost()).isEqualTo(Money.pln(855_000));
+        assertThat(three.serviceFee()).isEqualTo(Money.pln(42_750));
+        assertThat(three.total()).isEqualTo(Money.pln(897_750));
+        assertThat(two.baseCost()).isEqualTo(Money.pln(600_000));     // fewer than 3 months: no discount
+        assertThat(two.spotCost()).isEqualTo(Money.pln(600_000));
+    }
+
+    @Test
+    void withoutTheOwnersPriceADailyOrMonthlyBookingIsPricedFromTheHourlyPrice() {
+        ParkingSpot spot = spotAt(1000);
+
+        PricingService.Quote daily = pricing.quote(spot, range("2030-01-07T00:00:00Z", "2030-01-08T00:00:00Z"), BookingType.DAILY, null);
+        PricingService.Quote monthly = quoteMonths(spot, Instant.parse("2030-01-01T00:00:00Z"), 1);
+
+        assertThat(daily.baseCost()).isEqualTo(Money.pln(24_000));    // 24 h x 10.00
+        assertThat(monthly.baseCost()).isEqualTo(Money.pln(744_000)); // 744 h (January) x 10.00
+    }
+
+    @Test
+    void anHourlyBookingIgnoresTheDailyAndMonthlyPrices() {
+        ParkingSpot spot = spotAt(1000);
+        spot.setDailyPrice(Money.pln(500));
+        spot.setMonthlyPrice(Money.pln(500));
+
+        PricingService.Quote quote = pricing.quote(spot, range("2030-01-07T10:00:00Z", "2030-01-07T12:00:00Z"));
+
+        assertThat(quote.baseCost()).isEqualTo(Money.pln(2_000));
+    }
+
     private PricingService.Quote quoteMonths(ParkingSpot spot, Instant start, int months) {
         return pricing.quote(spot, pricing.periodFor(BookingType.MONTHLY, start, null, months), BookingType.MONTHLY, months);
     }
