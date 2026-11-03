@@ -6,7 +6,7 @@ Instructions for AI coding agents (Claude Code, Codex, Copilot, Cursor, Gemini a
 
 PARI is a portal where private owners rent out parking spaces and drivers find, reserve, pay for and check in to them. This repository is the **backend service** of an engineering degree project (Lublin University of Technology, team of three). Product requirements are identified as F01-F25 and NF01-NF15 and live in the Confluence space *My Software Team* (page *PARI project documentation*). The Polish design document is authoritative; Confluence pages are the working copy.
 
-**Current state:** the data layer exists (Flyway schema, JPA entities, repositories, tests), and so do services and REST controllers for creating, searching and reserving parking spaces, with payments behind a **mock** gateway (ADR 0004). There is **no security and no real payment provider yet**: callers are identified by the temporary `X-User-Id` header. Planned: Spring Security with JWT, Stripe, S3-compatible storage, SSE for live spot status, check-in/out, payout job. Do not describe planned parts as existing.
+**Current state:** the data layer, services and REST controllers cover the whole rental flow (spaces, search, booking, payment, check-in/out, payouts, reviews, notifications, Premium), secured with Spring Security and JWT. Payments are behind a **mock** gateway (ADR 0004). The `X-User-Id` header works only with `pari.security.jwt.dev-header-auth=true` (profile `local` and tests). Planned: Stripe, refresh tokens, verification, support, S3-compatible storage. See `docs/backend-concepts.md`. Do not describe planned parts as existing.
 
 ## Stack
 
