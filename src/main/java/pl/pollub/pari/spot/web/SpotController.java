@@ -56,6 +56,8 @@ public class SpotController {
             @Positive int widthCm,
             @Positive Integer heightCm,
             @NotNull @DecimalMin("0.01") BigDecimal hourlyPrice,
+            @DecimalMin("0.01") BigDecimal dailyPrice,
+            @DecimalMin("0.01") BigDecimal monthlyPrice,
             String accessInstructions,
             Boolean autoAccept,
             Set<String> amenities,
@@ -64,11 +66,13 @@ public class SpotController {
             boolean requestVerification) {
     }
 
-    /** {@code dailyPrice} from the request sketch is not supported: prices are hourly only. */
+    /** The prices are replaced as a whole: an absent {@code dailyPrice} or {@code monthlyPrice} removes the one that was set. */
     public record UpdateSpotRequest(
             @NotBlank String name,
             String description,
             @NotNull @DecimalMin("0.01") BigDecimal hourlyPrice,
+            @DecimalMin("0.01") BigDecimal dailyPrice,
+            @DecimalMin("0.01") BigDecimal monthlyPrice,
             @Positive int lengthCm,
             @Positive int widthCm,
             @Positive Integer heightCm,
@@ -91,7 +95,8 @@ public class SpotController {
     public SpotView create(@CurrentUserId UUID userId, @Valid @RequestBody CreateSpotRequest r) {
         return spotService.create(userId, new SpotService.CreateSpotCommand(r.name(), r.description(), r.street(), r.city(),
                 r.postalCode(), r.country(), r.lat(), r.lng(), r.lengthCm(), r.widthCm(), r.heightCm(),
-                toMoney(r.hourlyPrice()), r.accessInstructions(), r.autoAccept() == null || r.autoAccept(),
+                toMoney(r.hourlyPrice()), toMoneyOrNull(r.dailyPrice()), toMoneyOrNull(r.monthlyPrice()),
+                r.accessInstructions(), r.autoAccept() == null || r.autoAccept(),
                 r.amenities(), r.photoKeys(), r.ownershipDeclared(), r.requestVerification()));
     }
 
@@ -125,7 +130,8 @@ public class SpotController {
     @PutMapping("/{id}")
     public SpotView update(@CurrentUserId UUID userId, @PathVariable UUID id, @Valid @RequestBody UpdateSpotRequest r) {
         return spotService.update(userId, id, new SpotService.UpdateSpotCommand(r.name(), r.description(),
-                toMoney(r.hourlyPrice()), r.lengthCm(), r.widthCm(), r.heightCm(), r.accessInstructions(), r.amenities()));
+                toMoney(r.hourlyPrice()), toMoneyOrNull(r.dailyPrice()), toMoneyOrNull(r.monthlyPrice()),
+                r.lengthCm(), r.widthCm(), r.heightCm(), r.accessInstructions(), r.amenities()));
     }
 
     /** Removes the space (archived). 409 while it has active or upcoming reservations. */
@@ -154,5 +160,9 @@ public class SpotController {
 
     static Money toMoney(BigDecimal decimalPln) {
         return Money.pln(decimalPln.movePointRight(2).setScale(0, RoundingMode.HALF_UP).longValueExact());
+    }
+
+    static Money toMoneyOrNull(BigDecimal decimalPln) {
+        return decimalPln == null ? null : toMoney(decimalPln);
     }
 }

@@ -47,24 +47,46 @@ public class SpotService {
             int widthCm,
             Integer heightCm,
             Money hourlyPrice,
+            Money dailyPrice,
+            Money monthlyPrice,
             String accessInstructions,
             boolean autoAccept,
             Set<String> amenityCodes,
             List<String> photoKeys,
             boolean ownershipDeclared,
             boolean requestVerification) {
+
+        /** A space with an hourly price only: daily and monthly bookings are priced from it. */
+        public CreateSpotCommand(String name, String description, String street, String city, String postalCode, String country,
+                                 double lat, double lng, int lengthCm, int widthCm, Integer heightCm, Money hourlyPrice,
+                                 String accessInstructions, boolean autoAccept, Set<String> amenityCodes, List<String> photoKeys,
+                                 boolean ownershipDeclared, boolean requestVerification) {
+            this(name, description, street, city, postalCode, country, lat, lng, lengthCm, widthCm, heightCm, hourlyPrice,
+                    null, null, accessInstructions, autoAccept, amenityCodes, photoKeys, ownershipDeclared, requestVerification);
+        }
     }
 
-    /** The fields an owner may change on an existing space. {@code amenityCodes == null} keeps the current amenities. */
+    /**
+     * The fields an owner may change on an existing space. {@code amenityCodes == null} keeps the current amenities.
+     * The prices are replaced as a whole: a {@code null} daily or monthly price removes the price that was set.
+     */
     public record UpdateSpotCommand(
             String name,
             String description,
             Money hourlyPrice,
+            Money dailyPrice,
+            Money monthlyPrice,
             int lengthCm,
             int widthCm,
             Integer heightCm,
             String accessInstructions,
             Set<String> amenityCodes) {
+
+        /** An update that sets no daily or monthly price. */
+        public UpdateSpotCommand(String name, String description, Money hourlyPrice, int lengthCm, int widthCm, Integer heightCm,
+                                 String accessInstructions, Set<String> amenityCodes) {
+            this(name, description, hourlyPrice, null, null, lengthCm, widthCm, heightCm, accessInstructions, amenityCodes);
+        }
     }
 
     /** A photo attached to a space; {@code url} is the public address of the file. */
@@ -104,9 +126,7 @@ public class SpotService {
         if (!cmd.ownershipDeclared()) {
             throw new IllegalArgumentException("The legal declaration of the right to the space is required (F09)");
         }
-        if (cmd.hourlyPrice() == null || cmd.hourlyPrice().amountMinor() <= 0) {
-            throw new IllegalArgumentException("The hourly price must be positive");
-        }
+        requirePrices(cmd.hourlyPrice(), cmd.dailyPrice(), cmd.monthlyPrice());
 
         ParkingSpot spot = new ParkingSpot(owner, cmd.name().trim(), cmd.description(),
                 new Address(cmd.street().trim(), cmd.city().trim(), cmd.postalCode().trim(),
@@ -114,6 +134,8 @@ public class SpotService {
                 new GeoPoint(cmd.lat(), cmd.lng()),
                 new Dimensions(cmd.lengthCm(), cmd.widthCm(), cmd.heightCm()),
                 cmd.hourlyPrice());
+        spot.setDailyPrice(cmd.dailyPrice());
+        spot.setMonthlyPrice(cmd.monthlyPrice());
         spot.setAccessInstructions(cmd.accessInstructions());
         spot.setAutoAccept(cmd.autoAccept());
         spot.getAmenities().addAll(resolveAmenities(cmd.amenityCodes()));
@@ -156,12 +178,12 @@ public class SpotService {
     @Transactional
     public SpotView update(UUID userId, UUID spotId, UpdateSpotCommand cmd) {
         ParkingSpot spot = manageableSpot(userId, spotId);
-        if (cmd.hourlyPrice() == null || cmd.hourlyPrice().amountMinor() <= 0) {
-            throw new IllegalArgumentException("The hourly price must be positive");
-        }
+        requirePrices(cmd.hourlyPrice(), cmd.dailyPrice(), cmd.monthlyPrice());
         spot.setName(cmd.name().trim());
         spot.setDescription(cmd.description());
         spot.setHourlyPrice(cmd.hourlyPrice());
+        spot.setDailyPrice(cmd.dailyPrice());
+        spot.setMonthlyPrice(cmd.monthlyPrice());
         spot.setDimensions(new Dimensions(cmd.lengthCm(), cmd.widthCm(), cmd.heightCm()));
         spot.setAccessInstructions(cmd.accessInstructions());
         if (cmd.amenityCodes() != null) {
@@ -246,6 +268,19 @@ public class SpotService {
         return spots.findByIdAndOwnerId(spotId, ownerId)
                 .filter(spot -> spot.getStatus() != SpotStatus.ARCHIVED)
                 .orElseThrow(() -> new NotFoundException("Parking spot not found"));
+    }
+
+    /** The hourly price is required; the daily and monthly prices are optional but must be positive when given. */
+    private static void requirePrices(Money hourly, Money daily, Money monthly) {
+        if (hourly == null || hourly.amountMinor() <= 0) {
+            throw new IllegalArgumentException("The hourly price must be positive");
+        }
+        if (daily != null && daily.amountMinor() <= 0) {
+            throw new IllegalArgumentException("The daily price must be positive when it is set");
+        }
+        if (monthly != null && monthly.amountMinor() <= 0) {
+            throw new IllegalArgumentException("The monthly price must be positive when it is set");
+        }
     }
 
     private Set<Amenity> resolveAmenities(Set<String> codes) {

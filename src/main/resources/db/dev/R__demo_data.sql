@@ -96,6 +96,10 @@ BEGIN
          'Draft space (not published)', 'Used to test activation.', 'Zana 5', 'Lublin', '20-601',
          51.2350, 22.5100, 500, 250, NULL, 800, NULL, true, 'DRAFT', false, NULL, 'FREE');
 
+    -- PARI-55: two spaces have their own daily and monthly price (the others are priced from the hourly price).
+    UPDATE parking_spots SET daily_price_minor = 18000, monthly_price_minor = 300000 WHERE id = '00000000-0000-0000-0000-0000000000c1';
+    UPDATE parking_spots SET daily_price_minor = 15000, monthly_price_minor = 250000 WHERE id = '00000000-0000-0000-0000-0000000000c3';
+
     INSERT INTO spot_amenities (spot_id, amenity_id)
     SELECT s.spot_id, a.id
     FROM (VALUES

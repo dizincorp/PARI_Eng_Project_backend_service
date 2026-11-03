@@ -65,6 +65,19 @@ class SpotControllerTest {
     }
 
     @Test
+    void aDailyOrMonthlyPriceMustBePositiveWhenGiven() throws Exception {
+        UUID id = UUID.randomUUID();
+
+        mvc.perform(put("/api/spots/" + id).header("X-User-Id", USER).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"G\",\"hourlyPrice\":10,\"dailyPrice\":0,\"lengthCm\":500,\"widthCm\":250}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errorCode").value("VALIDATION_FAILED"));
+        mvc.perform(put("/api/spots/" + id).header("X-User-Id", USER).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"G\",\"hourlyPrice\":10,\"monthlyPrice\":-1,\"lengthCm\":500,\"widthCm\":250}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void updateByAnotherUserReturns403() throws Exception {
         when(spots.update(any(), any(), any())).thenThrow(new ForbiddenException("Only the owner of the parking spot can do this"));
 

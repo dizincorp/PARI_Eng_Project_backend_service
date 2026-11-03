@@ -38,6 +38,7 @@ public class PricingService {
     private static final long MAX_MONTHS = 36;
 
     private static final BigDecimal MINUTES_PER_HOUR = BigDecimal.valueOf(60);
+    private static final long MINUTES_PER_DAY = 24 * 60;
 
     private final PlatformSettings settings;
     private final PremiumSubscriptionRepository subscriptions;
@@ -97,8 +98,7 @@ public class PricingService {
     public Quote quote(ParkingSpot spot, TimeRange range, BookingType type, Integer durationMonths) {
         Money hourlyRate = spot.getHourlyPrice();
         long minutes = range.duration().toMinutes();
-        BigDecimal hours = BigDecimal.valueOf(minutes).divide(MINUTES_PER_HOUR, 10, RoundingMode.HALF_UP);
-        Money baseCost = hourlyRate.multiply(hours);
+        Money baseCost = baseCost(spot, hourlyRate, minutes, type, durationMonths);
         BigDecimal discountPercent = type == BookingType.MONTHLY ? monthlyDiscountPercent(durationMonths) : BigDecimal.ZERO;
         Money discountAmount = baseCost.multiply(discountPercent.divide(BigDecimal.valueOf(100), 6, RoundingMode.HALF_UP));
         Money spotCost = baseCost.subtract(discountAmount);
@@ -108,6 +108,22 @@ public class PricingService {
         Money commission = premiumOwner ? Money.ZERO : spotCost.multiply(settings.decimal("commission_rate"));
         return new Quote(hourlyRate, minutes, spotCost, serviceFee, commission, spotCost.add(serviceFee),
                 baseCost, discountPercent, discountAmount);
+    }
+
+    /**
+     * Cost before any discount (PARI-55). A {@code DAILY} booking costs the owner's daily price for every whole day, a
+     * {@code MONTHLY} one the owner's monthly price for every month booked; when the owner did not set that price (or the
+     * booking is hourly) the hourly price times the duration is used, prorated by the minute.
+     */
+    private Money baseCost(ParkingSpot spot, Money hourlyRate, long minutes, BookingType type, Integer durationMonths) {
+        if (type == BookingType.DAILY && spot.getDailyPrice() != null) {
+            return spot.getDailyPrice().multiply(BigDecimal.valueOf(minutes / MINUTES_PER_DAY));
+        }
+        if (type == BookingType.MONTHLY && spot.getMonthlyPrice() != null) {
+            return spot.getMonthlyPrice().multiply(BigDecimal.valueOf(durationMonths));
+        }
+        BigDecimal hours = BigDecimal.valueOf(minutes).divide(MINUTES_PER_HOUR, 10, RoundingMode.HALF_UP);
+        return hourlyRate.multiply(hours);
     }
 
     /** 12 months or more, 6 to 11 months, 3 to 5 months; fewer than 3 months get no discount. Percentages come from platform_settings. */
