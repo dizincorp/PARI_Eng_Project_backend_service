@@ -154,7 +154,8 @@ public class ReservationService {
 
         PricingService.Quote quote = pricing.quote(spot, period, cmd.bookingType(), cmd.durationMonths());
         Reservation reservation = new Reservation(newCode(now), spot, driver, vehicle, period, quote.hourlyRate(),
-                quote.spotCost(), quote.serviceFee(), quote.commission());
+                quote.spotCost(), quote.serviceFee(), quote.commission(), quote.bookingType(), quote.durationDays(),
+                quote.durationMonths(), quote.baseCost(), quote.discountAmount());
         try {
             reservations.saveAndFlush(reservation);
         } catch (DataIntegrityViolationException e) {

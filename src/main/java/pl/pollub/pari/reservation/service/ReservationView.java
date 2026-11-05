@@ -1,5 +1,6 @@
 package pl.pollub.pari.reservation.service;
 
+import pl.pollub.pari.reservation.domain.BookingType;
 import pl.pollub.pari.reservation.domain.Reservation;
 import pl.pollub.pari.reservation.domain.ReservationStatus;
 import pl.pollub.pari.user.domain.User;
@@ -36,6 +37,11 @@ public record ReservationView(
         BigDecimal serviceFee,
         BigDecimal total,
         String currency,
+        BookingType bookingType,
+        Integer durationDays,
+        Integer durationMonths,
+        BigDecimal baseCost,
+        BigDecimal discountAmount,
         String pinCode,
         String qrToken,
         String cancelReason,
@@ -76,6 +82,11 @@ public record ReservationView(
                 r.getServiceFee().toDecimal(),
                 r.getTotal().toDecimal(),
                 r.getTotal().currency(),
+                r.getBookingType(),
+                r.getDurationDays(),
+                r.getDurationMonths(),
+                (r.getBaseCost() == null ? r.getSpotCost() : r.getBaseCost()).toDecimal(),
+                r.getDiscount().toDecimal(),
                 showAccess ? r.getPinCode() : null,
                 showAccess ? r.getQrToken() : null,
                 r.getCancelReason(),

@@ -34,7 +34,7 @@ public class ReservationController {
 
     /**
      * {@code bookingType} is HOURLY (default), DAILY (whole days) or MONTHLY. For MONTHLY give {@code durationMonths}
-     * (1 to 36) and no {@code end}; a long-term discount applies. The price is always calculated on the server.
+     * (1 to 36), or an {@code end} from which the months are counted; a long-term discount applies. The price is always calculated on the server.
      */
     public record QuoteRequest(@NotNull UUID spotId, @NotNull Instant start, Instant end, BookingType bookingType,
                                Integer durationMonths) {
@@ -43,12 +43,13 @@ public class ReservationController {
     /** {@code baseCost} - {@code discountAmount} = {@code spotCost}; {@code total} = spotCost + serviceFee. */
     public record QuoteResponse(BookingType bookingType, long durationMinutes, BigDecimal hourlyRate, BigDecimal baseCost,
                                 BigDecimal discountPercent, BigDecimal discountAmount, BigDecimal spotCost,
-                                BigDecimal serviceFee, BigDecimal total, String currency) {
+                                BigDecimal serviceFee, BigDecimal total, String currency, Integer durationDays,
+                                Integer durationMonths) {
 
         static QuoteResponse of(BookingType type, PricingService.Quote q) {
             return new QuoteResponse(type == null ? BookingType.HOURLY : type, q.minutes(), q.hourlyRate().toDecimal(),
                     q.baseCost().toDecimal(), q.discountPercent(), q.discountAmount().toDecimal(), q.spotCost().toDecimal(),
-                    q.serviceFee().toDecimal(), q.total().toDecimal(), q.total().currency());
+                    q.serviceFee().toDecimal(), q.total().toDecimal(), q.total().currency(), q.durationDays(), q.durationMonths());
         }
     }
 

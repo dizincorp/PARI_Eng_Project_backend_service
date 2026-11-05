@@ -52,15 +52,29 @@ class DemoDataTest extends DbTestBase {
 
     @Test
     void amountsFollowThePricingRules() {
-        // total = spot cost + service fee; the fee and the commission are the configured shares of the spot cost
+        // spot cost: an hourly booking pays every started hour, a daily one the owner's daily rate (or 7 x the hourly price) per day
+        assertThat(count("""
+                select count(*) from reservations r join parking_spots s on s.id = r.spot_id
+                where r.spot_cost_minor <> case r.booking_type
+                        when 'HOURLY' then ceil(extract(epoch from (r.ends_at - r.starts_at)) / 3600) * r.hourly_rate_minor
+                        when 'DAILY' then r.duration_days * coalesce(s.daily_rate_minor,
+                            r.hourly_rate_minor * (select setting_value::numeric from platform_settings where setting_key = 'daily_rate_hourly_multiplier'))
+                        end
+                   or r.base_cost_minor <> r.spot_cost_minor + r.discount_minor
+                   or (r.booking_type = 'DAILY') <> (r.duration_days is not null)
+                """)).isZero();
+        // service fee: fixed for a daily booking, at least the minimum for an hourly one; total = spot cost + fee; the commission is a share of the spot cost
         assertThat(count("""
                 select count(*) from reservations r join parking_spots s on s.id = r.spot_id
                 where r.total_minor <> r.spot_cost_minor + r.service_fee_minor
-                   or r.service_fee_minor <> round(r.spot_cost_minor * (select setting_value::numeric from platform_settings where setting_key = 'service_fee_rate'))
-                   or r.spot_cost_minor <> round(r.hourly_rate_minor::numeric * extract(epoch from (r.ends_at - r.starts_at)) / 3600)
+                   or r.service_fee_minor <> case r.booking_type
+                        when 'DAILY' then (select setting_value::int from platform_settings where setting_key = 'service_fee_daily_minor')
+                        else greatest((select setting_value::int from platform_settings where setting_key = 'service_fee_hourly_min_minor'),
+                            round(r.spot_cost_minor * (select setting_value::numeric from platform_settings where setting_key = 'service_fee_rate'))) end
                    or r.commission_minor <> case when s.owner_id = '00000000-0000-0000-0000-000000000003' then 0
                         else round(r.spot_cost_minor * (select setting_value::numeric from platform_settings where setting_key = 'commission_rate')) end
                 """)).isZero();
+        assertThat(count("select count(*) from reservations where booking_type = 'DAILY'")).isEqualTo(1);
         // the final cost of a completed reservation is the spot cost plus the penalty
         assertThat(count("""
                 select count(*) from reservations

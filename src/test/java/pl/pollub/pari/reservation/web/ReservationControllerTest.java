@@ -74,7 +74,8 @@ class ReservationControllerTest {
                 pl.pollub.pari.common.domain.Money.pln(1000), 129_600, pl.pollub.pari.common.domain.Money.pln(1_231_200),
                 pl.pollub.pari.common.domain.Money.pln(61_560), pl.pollub.pari.common.domain.Money.pln(123_120),
                 pl.pollub.pari.common.domain.Money.pln(1_292_760), pl.pollub.pari.common.domain.Money.pln(1_296_000),
-                new BigDecimal("5"), pl.pollub.pari.common.domain.Money.pln(64_800)));
+                new BigDecimal("5"), pl.pollub.pari.common.domain.Money.pln(64_800),
+                pl.pollub.pari.reservation.domain.BookingType.MONTHLY, null, 3));
 
         mvc.perform(post("/api/reservations/quote").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"spotId\":\"" + SPOT + "\",\"start\":\"2030-01-07T10:00:00Z\",\"bookingType\":\"MONTHLY\",\"durationMonths\":3}"))
@@ -83,6 +84,7 @@ class ReservationControllerTest {
                 .andExpect(jsonPath("$.baseCost").value(12960.00))
                 .andExpect(jsonPath("$.discountPercent").value(5))
                 .andExpect(jsonPath("$.discountAmount").value(648.00))
+                .andExpect(jsonPath("$.durationMonths").value(3))
                 .andExpect(jsonPath("$.spotCost").value(12312.00));
     }
 
@@ -169,7 +171,8 @@ class ReservationControllerTest {
         return new ReservationView(UUID.randomUUID(), "RSV-20291201-ABCDE", SPOT, "Garage",
                 "Olga", "Owner", "+48 600 100 200", null, USER, "Dan", "Driver", "+48 600 100 300", null, VEHICLE, "LU12345",
                 Instant.parse("2030-01-07T10:00:00Z"), Instant.parse("2030-01-07T12:00:00Z"), status,
-                new BigDecimal("10.00"), new BigDecimal("20.00"), new BigDecimal("1.00"), new BigDecimal("21.00"), "PLN",
+                new BigDecimal("10.00"), new BigDecimal("20.00"), new BigDecimal("2.50"), new BigDecimal("22.50"), "PLN",
+                pl.pollub.pari.reservation.domain.BookingType.HOURLY, null, null, new BigDecimal("20.00"), new BigDecimal("0.00"),
                 status == ReservationStatus.CONFIRMED ? "4921" : null, null, null, Instant.parse("2029-12-01T00:00:00Z"), null, null, null, null);
     }
 

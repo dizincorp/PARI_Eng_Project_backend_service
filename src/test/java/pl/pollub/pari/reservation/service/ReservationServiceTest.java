@@ -80,8 +80,8 @@ class ReservationServiceTest extends ServiceTestBase {
         assertThat(view.status()).isEqualTo(ReservationStatus.CONFIRMED);
         assertThat(view.code()).startsWith("RSV-20291201-");
         assertThat(view.spotCost()).isEqualByComparingTo("20.00");
-        assertThat(view.serviceFee()).isEqualByComparingTo("1.00");
-        assertThat(view.total()).isEqualByComparingTo("21.00");
+        assertThat(view.serviceFee()).isEqualByComparingTo("2.50");
+        assertThat(view.total()).isEqualByComparingTo("22.50");
         assertThat(view.pinCode()).matches("\\d{4}");
         assertThat(view.qrToken()).isNotBlank();
 
@@ -89,7 +89,7 @@ class ReservationServiceTest extends ServiceTestBase {
         assertThat(charges).singleElement().satisfies(p -> {
             assertThat(p.getType()).isEqualTo(PaymentType.CHARGE);
             assertThat(p.getStatus()).isEqualTo(PaymentStatus.SUCCEEDED);
-            assertThat(p.getAmount().amountMinor()).isEqualTo(2100);
+            assertThat(p.getAmount().amountMinor()).isEqualTo(2250);
         });
         Payout payout = payouts.findByReservationId(view.id()).orElseThrow();
         assertThat(payout.getStatus()).isEqualTo(PayoutStatus.SCHEDULED);
@@ -232,7 +232,7 @@ class ReservationServiceTest extends ServiceTestBase {
         assertThat(cancelled.status()).isEqualTo(ReservationStatus.CANCELLED);
         Payment refund = payments.findByReservationIdOrderByCreatedAtAsc(booked.id()).get(1);
         assertThat(refund.getType()).isEqualTo(PaymentType.REFUND);
-        assertThat(refund.getAmount().amountMinor()).isEqualTo(2100);
+        assertThat(refund.getAmount().amountMinor()).isEqualTo(2250);
         assertThat(payouts.findByReservationId(booked.id()).orElseThrow().getStatus()).isEqualTo(PayoutStatus.CANCELLED);
     }
 
@@ -260,7 +260,7 @@ class ReservationServiceTest extends ServiceTestBase {
     void theQuoteMatchesWhatBookingCharges() {
         PricingService.Quote quote = service.quote(spot.getId(), T10, T12);
 
-        assertThat(quote.total().amountMinor()).isEqualTo(2100);
+        assertThat(quote.total().amountMinor()).isEqualTo(2250);
         assertThat(book(driver, T10, T12, VISA).reservation().total()).isEqualByComparingTo(quote.total().toDecimal());
     }
 
@@ -448,23 +448,29 @@ class ReservationServiceTest extends ServiceTestBase {
 
     @Test
     void aMonthlyBookingIsPricedOnTheServerWithTheLongTermDiscount() {
-        // 3 months from 2030-01-07 = 90 days = 2160 h at 10.00/h = 21600.00, minus 5% = 20520.00, fee 5% = 1026.00
+        // 3 months from 2030-01-07: 10.00/h gives 70.00 per day and 1400.00 per month (ticket defaults) = 4200.00, minus 5% = 3990.00, fixed fee 5.00
         BookingResult result = service.book(driver.getId(), new BookCommand(spot.getId(), vehicle.getId(), T10, null, VISA,
                 pl.pollub.pari.reservation.domain.BookingType.MONTHLY, 3));
 
         ReservationView view = result.reservation();
         assertThat(result.paymentFailed()).isFalse();
         assertThat(view.endsAt()).isEqualTo(Instant.parse("2030-04-07T10:00:00Z"));
-        assertThat(view.spotCost()).isEqualByComparingTo("20520.00");
-        assertThat(view.serviceFee()).isEqualByComparingTo("1026.00");
-        assertThat(view.total()).isEqualByComparingTo("21546.00");
+        assertThat(view.spotCost()).isEqualByComparingTo("3990.00");
+        assertThat(view.serviceFee()).isEqualByComparingTo("5.00");
+        assertThat(view.total()).isEqualByComparingTo("3995.00");
+        // the breakdown is stored with the reservation (PARI-55)
+        assertThat(view.bookingType()).isEqualTo(pl.pollub.pari.reservation.domain.BookingType.MONTHLY);
+        assertThat(view.durationMonths()).isEqualTo(3);
+        assertThat(view.durationDays()).isNull();
+        assertThat(view.baseCost()).isEqualByComparingTo("4200.00");
+        assertThat(view.discountAmount()).isEqualByComparingTo("210.00");
         assertThat(payments.findByReservationIdOrderByCreatedAtAsc(view.id())).singleElement()
-                .satisfies(p -> assertThat(p.getAmount().amountMinor()).isEqualTo(2_154_600));
+                .satisfies(p -> assertThat(p.getAmount().amountMinor()).isEqualTo(399_500));
     }
 
     @Test
-    void aDailyBookingIsChargedTheOwnersDailyPrice() {
-        spot.setDailyPrice(Money.pln(20_000));               // 200.00 per day instead of 24 x 10.00
+    void aDailyBookingIsChargedTheOwnersDailyRate() {
+        spot.setDailyPrice(Money.pln(20_000));               // 200.00 per day instead of 7 x 10.00
         em.flush();
 
         BookingResult result = service.book(driver.getId(), new BookCommand(spot.getId(), vehicle.getId(), T10,
@@ -473,10 +479,13 @@ class ReservationServiceTest extends ServiceTestBase {
         ReservationView view = result.reservation();
         assertThat(result.paymentFailed()).isFalse();
         assertThat(view.spotCost()).isEqualByComparingTo("400.00");       // two days
-        assertThat(view.serviceFee()).isEqualByComparingTo("20.00");
-        assertThat(view.total()).isEqualByComparingTo("420.00");
+        assertThat(view.serviceFee()).isEqualByComparingTo("2.50");       // fixed fee of a daily booking
+        assertThat(view.total()).isEqualByComparingTo("402.50");
+        assertThat(view.bookingType()).isEqualTo(pl.pollub.pari.reservation.domain.BookingType.DAILY);
+        assertThat(view.durationDays()).isEqualTo(2);
+        assertThat(view.baseCost()).isEqualByComparingTo("400.00");
         assertThat(payments.findByReservationIdOrderByCreatedAtAsc(view.id())).singleElement()
-                .satisfies(p -> assertThat(p.getAmount().amountMinor()).isEqualTo(42_000));
+                .satisfies(p -> assertThat(p.getAmount().amountMinor()).isEqualTo(40_250));
     }
 
     @Test
