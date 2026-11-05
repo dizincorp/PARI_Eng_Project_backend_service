@@ -66,7 +66,10 @@ public class SpotController {
             boolean requestVerification) {
     }
 
-    /** The prices are replaced as a whole: an absent {@code dailyPrice} or {@code monthlyPrice} removes the one that was set. */
+    /**
+     * The prices are replaced as a whole: an absent {@code dailyPrice} or {@code monthlyPrice} removes the one that was set.
+     * An absent {@code amenities} or {@code autoAccept} keeps the current value.
+     */
     public record UpdateSpotRequest(
             @NotBlank String name,
             String description,
@@ -77,7 +80,8 @@ public class SpotController {
             @Positive int widthCm,
             @Positive Integer heightCm,
             String accessInstructions,
-            Set<String> amenities) {
+            Set<String> amenities,
+            Boolean autoAccept) {
     }
 
     private final SpotService spotService;
@@ -131,7 +135,7 @@ public class SpotController {
     public SpotView update(@CurrentUserId UUID userId, @PathVariable UUID id, @Valid @RequestBody UpdateSpotRequest r) {
         return spotService.update(userId, id, new SpotService.UpdateSpotCommand(r.name(), r.description(),
                 toMoney(r.hourlyPrice()), toMoneyOrNull(r.dailyPrice()), toMoneyOrNull(r.monthlyPrice()),
-                r.lengthCm(), r.widthCm(), r.heightCm(), r.accessInstructions(), r.amenities()));
+                r.lengthCm(), r.widthCm(), r.heightCm(), r.accessInstructions(), r.amenities(), r.autoAccept()));
     }
 
     /** Removes the space (archived). 409 while it has active or upcoming reservations. */

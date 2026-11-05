@@ -185,6 +185,30 @@ class ReservationServiceTest extends ServiceTestBase {
     }
 
     @Test
+    void theReservationShowsContactDataOfBothPartiesToBothPartiesOnly() {
+        owner.setAvatarUrl("http://localhost/media/avatars/owner.png");
+        driver.setAvatarUrl("http://localhost/media/avatars/driver.png");
+        ReservationView forDriver = book(driver, T10, T12, VISA).reservation();
+
+        ReservationView forOwner = service.get(owner.getId(), forDriver.id());
+        for (ReservationView view : List.of(forDriver, forOwner)) {
+            assertThat(view.ownerFirstName()).isEqualTo(owner.getFirstName());
+            assertThat(view.ownerLastName()).isEqualTo(owner.getLastName());
+            assertThat(view.ownerPhoneNumber()).isEqualTo(owner.getPhone());
+            assertThat(view.ownerAvatarUrl()).isEqualTo("http://localhost/media/avatars/owner.png");
+            assertThat(view.driverFirstName()).isEqualTo(driver.getFirstName());
+            assertThat(view.driverLastName()).isEqualTo(driver.getLastName());
+            assertThat(view.driverPhoneNumber()).isEqualTo(driver.getPhone());
+            assertThat(view.driverAvatarUrl()).isEqualTo("http://localhost/media/avatars/driver.png");
+        }
+
+        ReservationView seenByAStranger = ReservationView.of(
+                em.find(Reservation.class, forDriver.id()), persistUser(Role.DRIVER).getId());
+        assertThat(seenByAStranger.ownerPhoneNumber()).isNull();
+        assertThat(seenByAStranger.driverPhoneNumber()).isNull();
+    }
+
+    @Test
     void rejectingARequestRefundsTheDriverAndCancelsThePayout() {
         spot.setAutoAccept(false);
         ReservationView pending = book(driver, T10, T12, VISA).reservation();

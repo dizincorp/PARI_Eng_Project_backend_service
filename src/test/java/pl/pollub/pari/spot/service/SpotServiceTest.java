@@ -194,6 +194,48 @@ class SpotServiceTest extends ServiceTestBase {
     }
 
     @Test
+    void theOwnerCanSwitchAutoAcceptOffAndOnAndAnOmittedValueKeepsIt() {
+        UUID id = service.create(owner.getId(), command(true, false, Set.of())).id();
+        assertThat(service.get(id, owner.getId()).autoAccept()).isTrue();
+
+        SpotView manual = service.update(owner.getId(), id, new SpotService.UpdateSpotCommand(
+                "Garage 7", null, Money.pln(1250), null, null, 500, 250, null, null, null, Boolean.FALSE));
+        flushAndClear();
+        assertThat(manual.autoAccept()).isFalse();
+        assertThat(service.get(id, owner.getId()).autoAccept()).isFalse();
+
+        SpotView untouched = service.update(owner.getId(), id, new SpotService.UpdateSpotCommand(
+                "Garage 7", null, Money.pln(1250), 500, 250, null, null, null));
+        assertThat(untouched.autoAccept()).isFalse();                       // null keeps the current mode
+
+        SpotView automatic = service.update(owner.getId(), id, new SpotService.UpdateSpotCommand(
+                "Garage 7", null, Money.pln(1250), null, null, 500, 250, null, null, null, true));
+        assertThat(automatic.autoAccept()).isTrue();
+    }
+
+    @Test
+    void theOwnersContactDataIsShownWithTheNamePhoneAndAvatarToTheOwnerAndToDriversWithAReservationOnly() {
+        owner.setAvatarUrl("http://localhost/media/avatars/owner.png");
+        UUID id = service.create(owner.getId(), command(true, false, Set.of())).id();
+        User driver = persistUser(Role.DRIVER);
+        User stranger = persistUser(Role.DRIVER);
+        persistReservation(em.find(pl.pollub.pari.spot.domain.ParkingSpot.class, id), driver, persistVehicle(driver),
+                java.time.Instant.parse("2030-01-07T10:00:00Z"), java.time.Instant.parse("2030-01-07T12:00:00Z"));
+        em.flush();
+
+        for (UUID viewer : List.of(owner.getId(), driver.getId(), stranger.getId())) {
+            SpotView view = service.get(id, viewer);
+            assertThat(view.ownerFirstName()).isEqualTo(owner.getFirstName());
+            assertThat(view.ownerLastName()).isEqualTo(owner.getLastName());
+            assertThat(view.ownerAvatarUrl()).isEqualTo("http://localhost/media/avatars/owner.png");
+        }
+        assertThat(service.get(id, owner.getId()).ownerPhoneNumber()).isEqualTo(owner.getPhone());
+        assertThat(service.get(id, driver.getId()).ownerPhoneNumber()).isEqualTo(owner.getPhone());
+        assertThat(service.get(id, stranger.getId()).ownerPhoneNumber()).isNull();
+        assertThat(service.get(id, null).ownerPhoneNumber()).isNull();
+    }
+
+    @Test
     void editingNeedsTheOwnerOrAnAdminAndAPositivePrice() {
         UUID id = service.create(owner.getId(), command(true, false, Set.of())).id();
         User stranger = persistUser(Role.OWNER);

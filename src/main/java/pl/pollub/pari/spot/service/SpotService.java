@@ -67,8 +67,9 @@ public class SpotService {
     }
 
     /**
-     * The fields an owner may change on an existing space. {@code amenityCodes == null} keeps the current amenities.
-     * The prices are replaced as a whole: a {@code null} daily or monthly price removes the price that was set.
+     * The fields an owner may change on an existing space. {@code amenityCodes == null} keeps the current amenities and
+     * {@code autoAccept == null} keeps the current booking mode. The prices are replaced as a whole: a {@code null} daily
+     * or monthly price removes the price that was set.
      */
     public record UpdateSpotCommand(
             String name,
@@ -80,12 +81,20 @@ public class SpotService {
             int widthCm,
             Integer heightCm,
             String accessInstructions,
-            Set<String> amenityCodes) {
+            Set<String> amenityCodes,
+            Boolean autoAccept) {
+
+        /** An update that keeps the amenities and the auto-accept setting as they are. */
+        public UpdateSpotCommand(String name, String description, Money hourlyPrice, Money dailyPrice, Money monthlyPrice,
+                                 int lengthCm, int widthCm, Integer heightCm, String accessInstructions, Set<String> amenityCodes) {
+            this(name, description, hourlyPrice, dailyPrice, monthlyPrice, lengthCm, widthCm, heightCm, accessInstructions,
+                    amenityCodes, null);
+        }
 
         /** An update that sets no daily or monthly price. */
         public UpdateSpotCommand(String name, String description, Money hourlyPrice, int lengthCm, int widthCm, Integer heightCm,
                                  String accessInstructions, Set<String> amenityCodes) {
-            this(name, description, hourlyPrice, null, null, lengthCm, widthCm, heightCm, accessInstructions, amenityCodes);
+            this(name, description, hourlyPrice, null, null, lengthCm, widthCm, heightCm, accessInstructions, amenityCodes, null);
         }
     }
 
@@ -160,7 +169,10 @@ public class SpotService {
         if (spot.getStatus() == SpotStatus.ARCHIVED || (spot.getStatus() != SpotStatus.ACTIVE && !isOwner)) {
             throw new NotFoundException("Parking spot not found");
         }
-        return SpotView.of(spot, viewerId);
+        // the owner's phone number goes to the owner and to a driver who holds a reservation on the space
+        boolean holdsReservation = viewerId != null && !isOwner
+                && reservations.existsBySpotIdAndDriverIdAndStatusIn(spotId, viewerId, ReservationStatus.SLOT_HOLDING);
+        return SpotView.of(spot, viewerId, holdsReservation);
     }
 
     @Transactional(readOnly = true)
@@ -172,8 +184,8 @@ public class SpotService {
     }
 
     /**
-     * The owner (or an ADMIN) edits a space. Unknown space is 404; someone else's space is 403. The location, the owner and
-     * the auto-accept setting are not changed here.
+     * The owner (or an ADMIN) edits a space. Unknown space is 404; someone else's space is 403. The location and the owner
+     * are not changed here. Switching auto-accept affects new bookings only: requests already waiting for approval stay so.
      */
     @Transactional
     public SpotView update(UUID userId, UUID spotId, UpdateSpotCommand cmd) {
@@ -186,6 +198,9 @@ public class SpotService {
         spot.setMonthlyPrice(cmd.monthlyPrice());
         spot.setDimensions(new Dimensions(cmd.lengthCm(), cmd.widthCm(), cmd.heightCm()));
         spot.setAccessInstructions(cmd.accessInstructions());
+        if (cmd.autoAccept() != null) {
+            spot.setAutoAccept(cmd.autoAccept());
+        }
         if (cmd.amenityCodes() != null) {
             Set<Amenity> resolved = resolveAmenities(cmd.amenityCodes());
             spot.getAmenities().clear();

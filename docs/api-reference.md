@@ -583,7 +583,15 @@ PARI backend API version 0.0.1. Parking space rental portal. Authenticate with a
 | `code` | string | no |  |
 | `spotId` | string (uuid) | no |  |
 | `spotName` | string | no |  |
+| `ownerFirstName` | string | no |  |
+| `ownerLastName` | string | no |  |
+| `ownerPhoneNumber` | string | no | only for the owner and the driver of the reservation |
+| `ownerAvatarUrl` | string | no |  |
 | `driverId` | string (uuid) | no |  |
+| `driverFirstName` | string | no |  |
+| `driverLastName` | string | no |  |
+| `driverPhoneNumber` | string | no | only for the owner and the driver of the reservation |
+| `driverAvatarUrl` | string | no |  |
 | `vehicleId` | string (uuid) | no |  |
 | `vehiclePlate` | string | no |  |
 | `startsAt` | string (date-time) | no |  |
@@ -658,6 +666,9 @@ PARI backend API version 0.0.1. Parking space rental portal. Authenticate with a
 | `id` | string (uuid) | no |  |
 | `ownerId` | string (uuid) | no |  |
 | `ownerFirstName` | string | no |  |
+| `ownerLastName` | string | no |  |
+| `ownerPhoneNumber` | string | no | only for the owner and for a driver holding a reservation on the space |
+| `ownerAvatarUrl` | string | no |  |
 | `name` | string | no |  |
 | `description` | string | no |  |
 | `street` | string | no |  |
@@ -734,7 +745,8 @@ PARI backend API version 0.0.1. Parking space rental portal. Authenticate with a
 | `widthCm` | integer (int32) | no |  |
 | `heightCm` | integer (int32) | no |  |
 | `accessInstructions` | string | no |  |
-| `amenities` | array of string | no |  |
+| `amenities` | array of string | no | left out keeps the current amenities |
+| `autoAccept` | boolean | no | `false` = every booking waits for the owner (`PENDING_APPROVAL`); left out keeps the current mode |
 
 ### UserView
 
