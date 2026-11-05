@@ -70,11 +70,32 @@ class SpotServiceTest extends ServiceTestBase {
     }
 
     @Test
-    void onlyActiveOwnersCanListASpace() {
+    void aDriverWhoListsASpaceBecomesAnOwnerAndKeepsTheDriverRole() {
         User driverOnly = persistUser(Role.DRIVER);
-        assertThatThrownBy(() -> service.create(driverOnly.getId(), command(true, false, Set.of())))
-                .isInstanceOf(ForbiddenException.class);
+        em.flush();
 
+        SpotView view = service.create(driverOnly.getId(), command(true, false, Set.of()));
+
+        em.flush();
+        em.clear();
+        User reloaded = em.find(User.class, driverOnly.getId());
+        assertThat(reloaded.getRoles()).containsExactlyInAnyOrder(Role.DRIVER, Role.OWNER);
+        assertThat(service.listOwn(driverOnly.getId())).extracting(SpotView::id).containsExactly(view.id());
+    }
+
+    @Test
+    void aRefusedListingDoesNotGrantTheOwnerRole() {
+        User driverOnly = persistUser(Role.DRIVER);
+        em.flush();
+
+        assertThatThrownBy(() -> service.create(driverOnly.getId(), command(false, false, Set.of())))
+                .isInstanceOf(IllegalArgumentException.class);
+
+        assertThat(driverOnly.hasRole(Role.OWNER)).isFalse();
+    }
+
+    @Test
+    void blockedAccountsCannotListASpace() {
         owner.block();
         assertThatThrownBy(() -> service.create(owner.getId(), command(true, false, Set.of())))
                 .isInstanceOf(ForbiddenException.class);

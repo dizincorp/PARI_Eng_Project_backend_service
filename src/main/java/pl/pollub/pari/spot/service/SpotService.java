@@ -121,7 +121,8 @@ public class SpotService {
 
     /**
      * Creates and immediately activates a space. The owner must declare the right to dispose of it (F09); an inspection
-     * request (F10) is queued when asked for. The listing becomes visible in search without waiting for the inspection.
+     * request (F10) is queued when asked for. A user who is not an owner yet (a driver) is granted the OWNER role, so
+     * the same account can both park and rent out (PARI-58); a blocked account is refused. The listing becomes visible in search without waiting for the inspection.
      */
     @Transactional
     public SpotView create(UUID ownerId, CreateSpotCommand cmd) {
@@ -129,13 +130,13 @@ public class SpotService {
         if (owner.isBlocked()) {
             throw new ForbiddenException("The account is blocked");
         }
-        if (!owner.hasRole(Role.OWNER)) {
-            throw new ForbiddenException("The OWNER role is required to list a parking space");
-        }
         if (!cmd.ownershipDeclared()) {
             throw new IllegalArgumentException("The legal declaration of the right to the space is required (F09)");
         }
         requirePrices(cmd.hourlyPrice(), cmd.dailyPrice(), cmd.monthlyPrice());
+        if (!owner.hasRole(Role.OWNER)) {
+            owner.grantRole(Role.OWNER);   // PARI-58: a driver who lists a space becomes an owner too (P2P)
+        }
 
         ParkingSpot spot = new ParkingSpot(owner, cmd.name().trim(), cmd.description(),
                 new Address(cmd.street().trim(), cmd.city().trim(), cmd.postalCode().trim(),
