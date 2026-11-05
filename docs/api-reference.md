@@ -557,6 +557,8 @@ PARI backend API version 0.0.1. Parking space rental portal. Authenticate with a
 | `serviceFee` | number | no |  |
 | `total` | number | no |  |
 | `currency` | string | no |  |
+| `durationDays` | integer | no | DAILY only (calendar days billed) |
+| `durationMonths` | integer | no | MONTHLY only |
 
 ### ReasonRequest
 

@@ -96,9 +96,9 @@ BEGIN
          'Draft space (not published)', 'Used to test activation.', 'Zana 5', 'Lublin', '20-601',
          51.2350, 22.5100, 500, 250, NULL, 800, NULL, true, 'DRAFT', false, NULL, 'FREE');
 
-    -- PARI-55: two spaces have their own daily and monthly price (the others are priced from the hourly price).
-    UPDATE parking_spots SET daily_price_minor = 18000, monthly_price_minor = 300000 WHERE id = '00000000-0000-0000-0000-0000000000c1';
-    UPDATE parking_spots SET daily_price_minor = 15000, monthly_price_minor = 250000 WHERE id = '00000000-0000-0000-0000-0000000000c3';
+    -- PARI-55: two spaces have their own daily and monthly rate (the others are priced from the hourly price).
+    UPDATE parking_spots SET daily_rate_minor = 18000, monthly_rate_minor = 300000 WHERE id = '00000000-0000-0000-0000-0000000000c1';
+    UPDATE parking_spots SET daily_rate_minor = 15000, monthly_rate_minor = 250000 WHERE id = '00000000-0000-0000-0000-0000000000c3';
 
     INSERT INTO spot_amenities (spot_id, amenity_id)
     SELECT s.spot_id, a.id
@@ -146,7 +146,10 @@ BEGIN
                (SELECT setting_value::numeric FROM platform_settings WHERE setting_key = 'commission_rate')             AS commission_rate,
                (SELECT setting_value::numeric FROM platform_settings WHERE setting_key = 'overstay_penalty_multiplier') AS penalty_multiplier,
                (SELECT setting_value::int     FROM platform_settings WHERE setting_key = 'overstay_grace_minutes')      AS grace_minutes,
-               (SELECT setting_value::int     FROM platform_settings WHERE setting_key = 'approval_timeout_minutes')    AS approval_minutes
+               (SELECT setting_value::int     FROM platform_settings WHERE setting_key = 'approval_timeout_minutes')    AS approval_minutes,
+               (SELECT setting_value::int     FROM platform_settings WHERE setting_key = 'service_fee_hourly_min_minor') AS fee_hourly_min,
+               (SELECT setting_value::int     FROM platform_settings WHERE setting_key = 'service_fee_daily_minor')     AS fee_daily,
+               (SELECT setting_value::numeric FROM platform_settings WHERE setting_key = 'daily_rate_hourly_multiplier') AS daily_multiplier
     ),
     v (n, spot_id, driver_id, vehicle_id, starts, ends, status, over_min, reason, cancel_after_min, created) AS (
         VALUES
@@ -174,22 +177,41 @@ BEGIN
              pg_temp.local_ts(4, 11), pg_temp.local_ts(4, 12), 'CANCELLED', 0, 'Payment failed: The card was declined', 0, NULL)
     ),
     calc AS (
-        SELECT v.*, s.hourly_price_minor AS rate, s.owner_id, cfg.*,
+        SELECT v.*, s.hourly_price_minor AS rate, s.owner_id, s.daily_rate_minor, cfg.*,
                COALESCE(v.created, LEAST(v.starts - interval '1 day', now() - interval '10 minutes')) AS created_at,
-               round(s.hourly_price_minor::numeric * extract(epoch FROM (v.ends - v.starts)) / 3600) AS spot_cost
+               -- D0005 is the daily booking, every other reservation is hourly
+               CASE WHEN v.n = 5 THEN 'DAILY' ELSE 'HOURLY' END AS btype,
+               GREATEST(1, (v.ends AT TIME ZONE 'Europe/Warsaw')::date - (v.starts AT TIME ZONE 'Europe/Warsaw')::date) AS days
         FROM v JOIN parking_spots s ON s.id = v.spot_id CROSS JOIN cfg
+    ),
+    priced AS (
+        -- the pricing rules of PricingService (PARI-55): every started hour is paid; a day costs the owner's daily rate
+        -- or daily_rate_hourly_multiplier x the hourly price; the service fee is fixed for a day and at least the minimum for an hour
+        SELECT calc.*,
+               CASE WHEN btype = 'DAILY'
+                    THEN days * COALESCE(daily_rate_minor, round(rate * daily_multiplier))
+                    ELSE ceil(extract(epoch FROM (ends - starts)) / 3600) * rate END AS spot_cost
+        FROM calc
+    ),
+    fees AS (
+        SELECT priced.*,
+               CASE WHEN btype = 'DAILY' THEN fee_daily
+                    ELSE GREATEST(fee_hourly_min, round(spot_cost * fee_rate)) END AS service_fee
+        FROM priced
     )
     INSERT INTO reservations (id, code, spot_id, driver_id, vehicle_id, starts_at, ends_at, status,
                               hourly_rate_minor, spot_cost_minor, service_fee_minor, total_minor, commission_minor,
+                              booking_type, duration_days, base_cost_minor, discount_minor,
                               pin_code, qr_token, check_in_at, check_out_at, overstay_penalty_minor, final_cost_minor,
                               cancel_reason, cancelled_at, created_at, updated_at)
     SELECT ('00000000-0000-0000-0000-00000000d0' || lpad(n::text, 2, '0'))::uuid,
            'RSV-' || to_char(created_at AT TIME ZONE 'UTC', 'YYYYMMDD') || '-D' || lpad(n::text, 4, '0'),
            spot_id, driver_id, vehicle_id, starts, ends, status,
            rate, spot_cost,
-           round(spot_cost * fee_rate),
-           spot_cost + round(spot_cost * fee_rate),
+           service_fee,
+           spot_cost + service_fee,
            CASE WHEN owner_id = '00000000-0000-0000-0000-000000000003' THEN 0 ELSE round(spot_cost * commission_rate) END,
+           btype, CASE WHEN btype = 'DAILY' THEN days END, spot_cost, 0,
            CASE WHEN status IN ('CONFIRMED', 'IN_PROGRESS', 'COMPLETED') THEN lpad((abs(hashtext('pin' || n)) % 10000)::text, 4, '0') END,
            CASE WHEN status IN ('CONFIRMED', 'IN_PROGRESS', 'COMPLETED') THEN 'demo-' || substr(md5('qr' || n), 1, 24) END,
            CASE WHEN status IN ('IN_PROGRESS', 'COMPLETED') THEN starts + interval '2 minutes' END,
@@ -200,7 +222,7 @@ BEGIN
            CASE WHEN status = 'EXPIRED' THEN created_at + approval_minutes * interval '1 minute'
                 WHEN cancel_after_min IS NOT NULL THEN created_at + cancel_after_min * interval '1 minute' END,
            created_at, created_at
-    FROM calc;
+    FROM fees;
 
     -- ------------------------------------------------------------ payments and payouts
 

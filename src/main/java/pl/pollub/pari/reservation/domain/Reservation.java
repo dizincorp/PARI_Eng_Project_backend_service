@@ -73,6 +73,24 @@ public class Reservation extends BaseEntity {
     @Column(name = "commission_minor", nullable = false)
     private Money commission;
 
+    /** What the reservation was priced as (PARI-55). */
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private BookingType bookingType = BookingType.HOURLY;
+
+    /** Calendar days billed, for a DAILY booking. */
+    private Integer durationDays;
+
+    /** Months billed, for a MONTHLY booking. */
+    private Integer durationMonths;
+
+    /** Cost before the long-term discount; {@code spotCost = baseCost - discount}. */
+    @Column(name = "base_cost_minor")
+    private Money baseCost;
+
+    @Column(name = "discount_minor", nullable = false)
+    private Money discount = Money.ZERO;
+
     private String pinCode;
 
     private String qrToken;
@@ -107,7 +125,20 @@ public class Reservation extends BaseEntity {
         this.serviceFee = serviceFee;
         this.total = spotCost.add(serviceFee);
         this.commission = commission;
+        this.baseCost = spotCost;
         this.status = ReservationStatus.PENDING_PAYMENT;
+    }
+
+    /** A reservation with the pricing breakdown of its rental type (PARI-55). */
+    public Reservation(String code, ParkingSpot spot, User driver, Vehicle vehicle, TimeRange period,
+                       Money hourlyRate, Money spotCost, Money serviceFee, Money commission,
+                       BookingType bookingType, Integer durationDays, Integer durationMonths, Money baseCost, Money discount) {
+        this(code, spot, driver, vehicle, period, hourlyRate, spotCost, serviceFee, commission);
+        this.bookingType = bookingType;
+        this.durationDays = durationDays;
+        this.durationMonths = durationMonths;
+        this.baseCost = baseCost;
+        this.discount = discount;
     }
 
     /** The payment provider confirmed the payment. */

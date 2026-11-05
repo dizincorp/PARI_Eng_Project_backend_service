@@ -95,7 +95,7 @@ A reservation **holds its time slot** in `PENDING_PAYMENT`, `PENDING_APPROVAL`, 
 
 ### Money of one reservation
 
-Prices are calculated by `PricingService` from the spot price and `platform_settings` and **frozen on the reservation** (`hourly_rate_minor`, `spot_cost_minor`, `service_fee_minor`, `total_minor`, `commission_minor`), so a later price change never alters an existing booking. Example with the placeholder rates (service fee 5 %, commission 10 %), 3 hours at 12.00 PLN:
+Prices are calculated by `PricingService` from the spot price and `platform_settings` and **frozen on the reservation** (`hourly_rate_minor`, `spot_cost_minor`, `service_fee_minor`, `total_minor`, `commission_minor`), so a later price change never alters an existing booking. Since V8 (PARI-55) the reservation also stores what it was priced as: `booking_type` (HOURLY, DAILY, MONTHLY), `duration_days`, `duration_months`, `base_cost_minor` (before the long-term discount) and `discount_minor`. Hourly: ceil(minutes/60) x hourly price, fee max(2.50, 5 %). Daily: calendar days x daily rate (default 7 x hourly), fixed fee 2.50. Monthly: months x monthly rate (default 20 x daily), discount 5/10/15 % from 3/6/12 months, fixed fee 5.00. The fees and multipliers are `platform_settings`. Example with the placeholder rates (service fee 5 %, commission 10 %), 3 hours at 12.00 PLN:
 
 | Item | Amount | Where stored |
 | --- | --- | --- |
