@@ -166,7 +166,8 @@ class ReservationControllerTest {
     }
 
     private static ReservationView view(ReservationStatus status) {
-        return new ReservationView(UUID.randomUUID(), "RSV-20291201-ABCDE", SPOT, "Garage", USER, VEHICLE, "LU12345",
+        return new ReservationView(UUID.randomUUID(), "RSV-20291201-ABCDE", SPOT, "Garage",
+                "Olga", "Owner", "+48 600 100 200", null, USER, "Dan", "Driver", "+48 600 100 300", null, VEHICLE, "LU12345",
                 Instant.parse("2030-01-07T10:00:00Z"), Instant.parse("2030-01-07T12:00:00Z"), status,
                 new BigDecimal("10.00"), new BigDecimal("20.00"), new BigDecimal("1.00"), new BigDecimal("21.00"), "PLN",
                 status == ReservationStatus.CONFIRMED ? "4921" : null, null, null, Instant.parse("2029-12-01T00:00:00Z"), null, null, null, null);

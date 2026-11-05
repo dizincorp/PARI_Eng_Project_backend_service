@@ -18,6 +18,9 @@ public record SpotView(
         UUID id,
         UUID ownerId,
         String ownerFirstName,
+        String ownerLastName,
+        String ownerPhoneNumber,
+        String ownerAvatarUrl,
         String name,
         String description,
         String street,
@@ -44,12 +47,24 @@ public record SpotView(
         List<String> amenities,
         List<String> photoKeys) {
 
+    /** The view for a viewer who is not known to hold a reservation: the owner's phone number is shown to the owner only. */
     public static SpotView of(ParkingSpot spot, UUID viewerId) {
+        return of(spot, viewerId, false);
+    }
+
+    /**
+     * @param viewerHoldsReservation true when the viewer is a driver with a reservation on this space; together with the
+     *                               owner it is the only audience that sees the owner's phone number
+     */
+    public static SpotView of(ParkingSpot spot, UUID viewerId, boolean viewerHoldsReservation) {
         boolean isOwner = spot.getOwner().getId().equals(viewerId);
         return new SpotView(
                 spot.getId(),
                 spot.getOwner().getId(),
                 spot.getOwner().getFirstName(),
+                spot.getOwner().getLastName(),
+                isOwner || viewerHoldsReservation ? spot.getOwner().getPhone() : null,
+                spot.getOwner().getAvatarUrl(),
                 spot.getName(),
                 spot.getDescription(),
                 spot.getAddress().street(),

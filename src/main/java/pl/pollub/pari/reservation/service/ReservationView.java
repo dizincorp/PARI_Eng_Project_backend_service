@@ -2,6 +2,7 @@ package pl.pollub.pari.reservation.service;
 
 import pl.pollub.pari.reservation.domain.Reservation;
 import pl.pollub.pari.reservation.domain.ReservationStatus;
+import pl.pollub.pari.user.domain.User;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -16,7 +17,15 @@ public record ReservationView(
         String code,
         UUID spotId,
         String spotName,
+        String ownerFirstName,
+        String ownerLastName,
+        String ownerPhoneNumber,
+        String ownerAvatarUrl,
         UUID driverId,
+        String driverFirstName,
+        String driverLastName,
+        String driverPhoneNumber,
+        String driverAvatarUrl,
         UUID vehicleId,
         String vehiclePlate,
         Instant startsAt,
@@ -37,14 +46,26 @@ public record ReservationView(
         BigDecimal finalCost) {
 
     public static ReservationView of(Reservation r, UUID viewerId) {
-        boolean showAccess = r.getDriver().getId().equals(viewerId)
+        User owner = r.getSpot().getOwner();
+        User driver = r.getDriver();
+        boolean showAccess = driver.getId().equals(viewerId)
                 && (r.getStatus() == ReservationStatus.CONFIRMED || r.getStatus() == ReservationStatus.IN_PROGRESS);
+        // the phone numbers go to the two parties of the reservation only
+        boolean participant = driver.getId().equals(viewerId) || owner.getId().equals(viewerId);
         return new ReservationView(
                 r.getId(),
                 r.getCode(),
                 r.getSpot().getId(),
                 r.getSpot().getName(),
-                r.getDriver().getId(),
+                owner.getFirstName(),
+                owner.getLastName(),
+                participant ? owner.getPhone() : null,
+                owner.getAvatarUrl(),
+                driver.getId(),
+                driver.getFirstName(),
+                driver.getLastName(),
+                participant ? driver.getPhone() : null,
+                driver.getAvatarUrl(),
                 r.getVehicle().getId(),
                 r.getVehicle().getPlateNumber(),
                 r.getPeriod().start(),
