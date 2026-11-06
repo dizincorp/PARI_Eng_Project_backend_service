@@ -314,6 +314,30 @@ class ReservationServiceTest extends ServiceTestBase {
     }
 
     @Test
+    void checkingInTwiceOrAfterTheEndIsRejected() {
+        ReservationView running = confirmed(NOW.minusSeconds(60), NOW.plusSeconds(3600));
+        service.checkIn(driver.getId(), running.id(), running.pinCode(), null);
+        assertThatThrownBy(() -> service.checkIn(driver.getId(), running.id(), running.pinCode(), null))
+                .isInstanceOf(pl.pollub.pari.common.domain.IllegalStateTransitionException.class);
+
+        ReservationView ended = confirmed(NOW.minusSeconds(7200), NOW.minusSeconds(3600));
+        assertThatThrownBy(() -> service.checkIn(driver.getId(), ended.id(), ended.pinCode(), null))
+                .isInstanceOf(pl.pollub.pari.common.domain.IllegalStateTransitionException.class);
+    }
+
+    @Test
+    void anEarlyCheckInAndAnEarlyCheckOutStillSettleTheFullBookedAmount() {
+        ReservationView early = confirmed(NOW.plusSeconds(5 * 60), NOW.plusSeconds(3600 + 5 * 60));
+        service.checkIn(driver.getId(), early.id(), early.pinCode(), null);
+
+        CheckOutView done = service.checkOut(driver.getId(), early.id());
+
+        assertThat(done.status()).isEqualTo(ReservationStatus.COMPLETED);
+        assertThat(done.overstayPenaltyFee()).isEqualByComparingTo("0");
+        assertThat(done.totalFinalAmount()).isEqualByComparingTo("20.00"); // the booked spot cost (fixture 20.00), not reduced
+    }
+
+    @Test
     void anUnapprovedReservationCannotCheckInEvenInTheWindow() {
         Reservation pending = persistReservation(spot, driver, vehicle, NOW.plusSeconds(60), NOW.plusSeconds(3600));
         em.flush();
