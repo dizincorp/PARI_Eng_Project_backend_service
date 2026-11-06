@@ -817,7 +817,7 @@ The user id always comes from the token, never from the request body. Rules are 
 | Create a space (`POST /api/spots`) | `OWNER` role, account not blocked, `ownershipDeclared = true` (F09), price > 0 | `403`, `400` |
 | Edit, archive, photos, calendar of a space | the owner of the space, or an `ADMIN` | `404` unknown space, `403` someone else's |
 | See a space | public while `ACTIVE`; any other status only for its owner | `404` |
-| Book (`POST /api/reservations`) | `DRIVER` role, not the owner of the space, space bookable, owner offers the time, slot free, vehicle belongs to the driver | `403`, `409 SPOT_NOT_BOOKABLE`, `409 SPOT_NOT_AVAILABLE`, `409 SPOT_ALREADY_RESERVED`, `402 PAYMENT_FAILED` |
+| Book (`POST /api/reservations`) | `DRIVER` role, not the owner of the space, space bookable, owner offers the time, slot free, vehicle belongs to the driver and has no other reservation (any space, statuses `PENDING_PAYMENT`, `PENDING_APPROVAL`, `CONFIRMED`, `IN_PROGRESS`; intervals are half-open, so back-to-back is fine) | `403`, `409 SPOT_NOT_BOOKABLE`, `409 SPOT_NOT_AVAILABLE`, `409 SPOT_ALREADY_RESERVED`, `409 VEHICLE_TIME_CONFLICT` (`details`: `conflictingReservationId`, `conflictingStart`, `conflictingEnd`), `402 PAYMENT_FAILED` |
 | Accept or reject a request | the owner of the space; status must be `PENDING_APPROVAL` | `403`, `409 INVALID_STATE` |
 | Cancel | the driver or the owner of the reservation; only before check-in | `409 INVALID_STATE` |
 | Check in | the driver of the reservation, with the PIN or the QR token, while the reserved period runs | `403 Invalid access code`, `409 INVALID_STATE` |
@@ -837,6 +837,8 @@ Every error has the same body, also for the security filters:
 ```json
 { "errorCode": "SPOT_ALREADY_RESERVED", "message": "The selected time is already reserved", "statusCode": 409, "timestamp": "2026-11-03T10:15:30Z" }
 ```
+
+Some business errors add a `details` object with machine-readable facts (it is absent otherwise), for example `{ "errorCode": "CHECK_IN_TOO_EARLY", ..., "details": { "availableAt": "2026-11-06T12:55:00Z" } }`.
 
 | Status | `errorCode` | Meaning |
 | --- | --- | --- |

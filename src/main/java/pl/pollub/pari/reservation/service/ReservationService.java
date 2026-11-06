@@ -151,6 +151,7 @@ public class ReservationService {
         if (reservations.existsOverlapping(spot.getId(), ReservationStatus.SLOT_HOLDING, period.start(), period.end())) {
             throw slotTaken();
         }
+        throwIfVehicleBusy(vehicle.getId(), period);
 
         PricingService.Quote quote = pricing.quote(spot, period, cmd.bookingType(), cmd.durationMonths());
         Reservation reservation = new Reservation(newCode(now), spot, driver, vehicle, period, quote.hourlyRate(),
@@ -159,6 +160,11 @@ public class ReservationService {
         try {
             reservations.saveAndFlush(reservation);
         } catch (DataIntegrityViolationException e) {
+            // two requests raced past the checks above: the database constraint decided; say which one was hit
+            if (String.valueOf(e.getMostSpecificCause().getMessage()).contains("reservations_vehicle_no_overlap")) {
+                throwIfVehicleBusy(vehicle.getId(), period);
+                throw new ConflictException("VEHICLE_TIME_CONFLICT", "The vehicle already has a reservation at this time");
+            }
             throw slotTaken();
         }
 
@@ -352,6 +358,21 @@ public class ReservationService {
             throw new NotFoundException("Reservation not found");
         }
         return reservation;
+    }
+
+    /**
+     * One vehicle cannot be in two reservations at once, at any spot (PARI-62). Slot-holding statuses count, intervals
+     * are half-open, so back-to-back reservations are fine. The error names the conflicting reservation and interval.
+     */
+    private void throwIfVehicleBusy(UUID vehicleId, TimeRange period) {
+        reservations.findOverlappingForVehicle(vehicleId, ReservationStatus.SLOT_HOLDING, period.start(), period.end())
+                .stream().findFirst().ifPresent(other -> {
+                    throw new ConflictException("VEHICLE_TIME_CONFLICT",
+                            "The vehicle already has a reservation from " + other.getPeriod().start() + " to " + other.getPeriod().end(),
+                            Map.of("conflictingReservationId", other.getId(),
+                                    "conflictingStart", other.getPeriod().start(),
+                                    "conflictingEnd", other.getPeriod().end()));
+                });
     }
 
     private static ConflictException slotTaken() {
