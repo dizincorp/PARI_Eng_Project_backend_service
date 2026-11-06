@@ -178,11 +178,22 @@ public class Reservation extends BaseEntity {
         return (pin != null && pin.equals(pinCode)) || (qr != null && qr.equals(qrToken));
     }
 
-    /** Check-in is possible between the start and the end of the reserved period. */
+    /** How long before the reserved start the driver may already check in (PARI-61). */
+    public static final java.time.Duration EARLY_CHECK_IN = java.time.Duration.ofMinutes(5);
+
+    /** The first moment check-in is accepted: {@link #EARLY_CHECK_IN} before the reserved start. */
+    public Instant earliestCheckIn() {
+        return period.start().minus(EARLY_CHECK_IN);
+    }
+
+    /**
+     * Check-in is possible from {@link #EARLY_CHECK_IN} before the start until the end of the reserved period. The
+     * booked interval and the amount do not change when the driver arrives early.
+     */
     public void checkIn(Instant now) {
         requireStatus("be checked in", ReservationStatus.CONFIRMED);
-        if (now.isBefore(period.start()) || !now.isBefore(period.end())) {
-            throw new IllegalStateTransitionException("check-in is possible only between " + period.start() + " and " + period.end());
+        if (now.isBefore(earliestCheckIn()) || !now.isBefore(period.end())) {
+            throw new IllegalStateTransitionException("check-in is possible only between " + earliestCheckIn() + " and " + period.end());
         }
         this.status = ReservationStatus.IN_PROGRESS;
         this.checkInAt = now;

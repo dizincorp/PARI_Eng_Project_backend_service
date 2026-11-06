@@ -820,7 +820,7 @@ The user id always comes from the token, never from the request body. Rules are 
 | Book (`POST /api/reservations`) | `DRIVER` role, not the owner of the space, space bookable, owner offers the time, slot free, vehicle belongs to the driver | `403`, `409 SPOT_NOT_BOOKABLE`, `409 SPOT_NOT_AVAILABLE`, `409 SPOT_ALREADY_RESERVED`, `402 PAYMENT_FAILED` |
 | Accept or reject a request | the owner of the space; status must be `PENDING_APPROVAL` | `403`, `409 INVALID_STATE` |
 | Cancel | the driver or the owner of the reservation; only before check-in | `409 INVALID_STATE` |
-| Check in | the driver of the reservation, with the PIN or the QR token, while the reserved period runs | `403 Invalid access code`, `409 INVALID_STATE` |
+| Check in | the driver of the reservation, with the PIN or the QR token, from 5 minutes before the start until the reserved end; the booked interval and amount do not change | `403 Invalid access code`, `409 CHECK_IN_TOO_EARLY` (body has `details.availableAt`, the moment check-in opens), `409 INVALID_STATE` |
 | Check out, active session | the driver of the reservation | `409 INVALID_STATE`, `404` |
 | Review a space | the driver of a `COMPLETED` reservation, once | `409 RESERVATION_NOT_COMPLETED`, `409 ALREADY_REVIEWED` |
 | Owner analytics, payout balance, withdraw, history | `OWNER` role | `403` |
@@ -837,6 +837,8 @@ Every error has the same body, also for the security filters:
 ```json
 { "errorCode": "SPOT_ALREADY_RESERVED", "message": "The selected time is already reserved", "statusCode": 409, "timestamp": "2026-11-03T10:15:30Z" }
 ```
+
+Some business errors add a `details` object with machine-readable facts (it is absent otherwise), for example `{ "errorCode": "CHECK_IN_TOO_EARLY", ..., "details": { "availableAt": "2026-11-06T12:55:00Z" } }`.
 
 | Status | `errorCode` | Meaning |
 | --- | --- | --- |

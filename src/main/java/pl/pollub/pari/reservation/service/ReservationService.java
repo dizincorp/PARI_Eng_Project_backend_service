@@ -216,8 +216,8 @@ public class ReservationService {
     }
 
     /**
-     * The driver arrives and starts the parking session by giving the PIN or the QR token issued at booking. Only
-     * possible while the reserved period is running.
+     * The driver arrives and starts the parking session by giving the PIN or the QR token issued at booking. Possible
+     * from five minutes before the start until the reserved end.
      */
     @Transactional
     public ReservationView checkIn(UUID driverId, UUID reservationId, String pinCode, String qrToken) {
@@ -225,7 +225,12 @@ public class ReservationService {
         if (!reservation.matchesAccessCode(pinCode, qrToken)) {
             throw new ForbiddenException("Invalid access code");
         }
-        reservation.checkIn(clock.instant());
+        Instant now = clock.instant();
+        if (reservation.getStatus() == ReservationStatus.CONFIRMED && now.isBefore(reservation.earliestCheckIn())) {
+            throw new ConflictException("CHECK_IN_TOO_EARLY", "Check-in opens at " + reservation.earliestCheckIn(),
+                    Map.of("availableAt", reservation.earliestCheckIn()));
+        }
+        reservation.checkIn(now);
         audit.record(driverId, "Reservation", reservation.getId(), "CHECKED_IN", Map.of("code", reservation.getCode()));
         // PARI-21: the occupancy flips on every check-in; the ticket has no condition on realtimeStatusEnabled
         ParkingSpot spot = reservation.getSpot();

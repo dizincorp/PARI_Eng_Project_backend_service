@@ -55,7 +55,7 @@ public class ApiExceptionHandler {
 
     @ExceptionHandler(ConflictException.class)
     ResponseEntity<ApiError> conflict(ConflictException e) {
-        return error(HttpStatus.CONFLICT, e.getErrorCode(), e.getMessage());
+        return error(HttpStatus.CONFLICT, e.getErrorCode(), e.getMessage(), e.getDetails());
     }
 
     @ExceptionHandler(IllegalStateTransitionException.class)
@@ -105,6 +105,10 @@ public class ApiExceptionHandler {
     }
 
     private ResponseEntity<ApiError> error(HttpStatus status, String code, String message) {
-        return ResponseEntity.status(status).body(new ApiError(code, message, status.value(), clock.instant()));
+        return error(status, code, message, null);
+    }
+
+    private ResponseEntity<ApiError> error(HttpStatus status, String code, String message, java.util.Map<String, Object> details) {
+        return ResponseEntity.status(status).body(new ApiError(code, message, status.value(), clock.instant(), details));
     }
 }
