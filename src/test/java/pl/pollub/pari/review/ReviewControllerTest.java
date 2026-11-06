@@ -43,7 +43,7 @@ class ReviewControllerTest {
     @Test
     void creatingAReviewReturns201() throws Exception {
         when(reviews.create(any(), any(), anyInt(), any())).thenReturn(
-                new ReviewService.ReviewView(UUID.randomUUID(), "Jan K.", 5, "Easy entry", Instant.parse("2029-12-01T00:00:00Z")));
+                new ReviewService.ReviewView(UUID.randomUUID(), UUID.randomUUID(), "Jan K.", 5, "Easy entry", Instant.parse("2029-12-01T00:00:00Z")));
 
         mvc.perform(post("/api/reservations/" + UUID.randomUUID() + "/reviews").header("X-User-Id", USER)
                         .contentType(MediaType.APPLICATION_JSON).content("{\"rating\":5,\"comment\":\"Easy entry\"}"))
@@ -62,18 +62,18 @@ class ReviewControllerTest {
     @Test
     void aDuplicateReviewReturns409() throws Exception {
         when(reviews.create(any(), any(), anyInt(), any()))
-                .thenThrow(new ConflictException("REVIEW_ALREADY_EXISTS", "You already reviewed this reservation"));
+                .thenThrow(new ConflictException("ALREADY_REVIEWED", "You already reviewed this reservation"));
 
         mvc.perform(post("/api/reservations/" + UUID.randomUUID() + "/reviews").header("X-User-Id", USER)
                         .contentType(MediaType.APPLICATION_JSON).content("{\"rating\":4}"))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.errorCode").value("REVIEW_ALREADY_EXISTS"));
+                .andExpect(jsonPath("$.errorCode").value("ALREADY_REVIEWED"));
     }
 
     @Test
     void listingSpotReviewsIsPublic() throws Exception {
         when(reviews.listForSpot(any(), anyInt(), anyInt())).thenReturn(new ReviewService.ReviewPage(
-                List.of(new ReviewService.ReviewView(UUID.randomUUID(), "Jan K.", 5, "Nice", Instant.parse("2029-12-01T00:00:00Z"))),
+                List.of(new ReviewService.ReviewView(UUID.randomUUID(), UUID.randomUUID(), "Jan K.", 5, "Nice", Instant.parse("2029-12-01T00:00:00Z"))),
                 1, 1, 0, 10));
 
         mvc.perform(get("/api/spots/" + UUID.randomUUID() + "/reviews?page=0&size=10"))

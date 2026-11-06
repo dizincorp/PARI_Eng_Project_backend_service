@@ -79,7 +79,7 @@ class ReviewServiceTest extends DbTestBase {
         service.create(driver.getId(), reservation.getId(), 4, null);
 
         assertThatThrownBy(() -> service.create(driver.getId(), reservation.getId(), 1, null))
-                .isInstanceOfSatisfying(ConflictException.class, e -> assertThat(e.getErrorCode()).isEqualTo("REVIEW_ALREADY_EXISTS"));
+                .isInstanceOfSatisfying(ConflictException.class, e -> assertThat(e.getErrorCode()).isEqualTo("ALREADY_REVIEWED"));
         assertThat(spot.getReviewCount()).isEqualTo(1);
     }
 

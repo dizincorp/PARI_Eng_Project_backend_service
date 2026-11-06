@@ -27,12 +27,12 @@ import java.util.UUID;
 public class ReviewService {
 
     /** What the public sees. The author is shown as first name and the initial of the last name, for example "Jan K.". */
-    public record ReviewView(UUID id, String authorName, int rating, String comment, Instant createdAt) {
+    public record ReviewView(UUID id, UUID reservationId, String authorName, int rating, String comment, Instant createdAt) {
 
         static ReviewView of(Review r) {
             String last = r.getAuthor().getLastName();
             String initial = last == null || last.isBlank() ? "" : " " + Character.toUpperCase(last.trim().charAt(0)) + ".";
-            return new ReviewView(r.getId(), r.getAuthor().getFirstName() + initial, r.getRating(), r.getComment(), r.getCreatedAt());
+            return new ReviewView(r.getId(), r.getReservation().getId(), r.getAuthor().getFirstName() + initial, r.getRating(), r.getComment(), r.getCreatedAt());
         }
     }
 
@@ -55,11 +55,11 @@ public class ReviewService {
         Reservation reservation = reservations.findById(reservationId)
                 .filter(r -> r.getDriver().getId().equals(driverId))
                 .orElseThrow(() -> new NotFoundException("Reservation not found"));
-        if (reservation.getStatus() != ReservationStatus.COMPLETED) {
-            throw new ConflictException("RESERVATION_NOT_COMPLETED", "Only a completed reservation can be reviewed");
-        }
         if (reviews.existsByReservationIdAndAuthorId(reservationId, driverId)) {
             throw alreadyReviewed();
+        }
+        if (!isReviewable(reservation)) {
+            throw new ConflictException("RESERVATION_NOT_COMPLETED", "Only a completed reservation can be reviewed");
         }
         ParkingSpot spot = reservation.getSpot();
         Review review = new Review(reservation, reservation.getDriver(), spot.getOwner(), spot, rating,
@@ -71,6 +71,11 @@ public class ReviewService {
         }
         refreshRating(spot);
         return ReviewView.of(review);
+    }
+
+    /** Review-eligible: COMPLETED with a check-in and a check-out time, whether it ended manually or automatically (PARI-59). */
+    static boolean isReviewable(Reservation r) {
+        return r.getStatus() == ReservationStatus.COMPLETED && r.getCheckInAt() != null && r.getCheckOutAt() != null;
     }
 
     /** Visible reviews of a space, newest first. */
@@ -90,6 +95,6 @@ public class ReviewService {
     }
 
     private static ConflictException alreadyReviewed() {
-        return new ConflictException("REVIEW_ALREADY_EXISTS", "You already reviewed this reservation");
+        return new ConflictException("ALREADY_REVIEWED", "You already reviewed this reservation");
     }
 }

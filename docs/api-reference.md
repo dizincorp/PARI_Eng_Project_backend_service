@@ -628,6 +628,7 @@ PARI backend API version 0.0.1. Parking space rental portal. Authenticate with a
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `id` | string (uuid) | no |  |
+| `reservationId` | string (uuid) | no | the reservation the review belongs to |
 | `authorName` | string | no |  |
 | `rating` | integer (int32) | no |  |
 | `comment` | string | no |  |
@@ -818,7 +819,7 @@ The user id always comes from the token, never from the request body. Rules are 
 | Cancel | the driver or the owner of the reservation; only before check-in | `409 INVALID_STATE` |
 | Check in | the driver of the reservation, with the PIN or the QR token, while the reserved period runs | `403 Invalid access code`, `409 INVALID_STATE` |
 | Check out, active session | the driver of the reservation | `409 INVALID_STATE`, `404` |
-| Review a space | the driver of a `COMPLETED` reservation, once | `409 RESERVATION_NOT_COMPLETED`, `409 REVIEW_ALREADY_EXISTS` |
+| Review a space | the driver of a `COMPLETED` reservation, once | `409 RESERVATION_NOT_COMPLETED`, `409 ALREADY_REVIEWED` |
 | Owner analytics, payout balance, withdraw, history | `OWNER` role | `403` |
 | Withdraw | amount (at most two decimals) not above the available balance | `409 INSUFFICIENT_BALANCE`, `402 PAYMENT_FAILED` |
 | Premium (`POST /api/subscriptions/premium`) | `OWNER` role, no active plan | `409 ALREADY_PREMIUM`, `402 PAYMENT_FAILED` |
@@ -845,7 +846,7 @@ Every error has the same body, also for the security filters:
 | 403 | `FORBIDDEN` | role or ownership rule |
 | 404 | `NOT_FOUND` | unknown id, or a resource the caller may not see |
 | 409 | `INVALID_STATE` | the action is not possible in the current status of the object |
-| 409 | business codes | `SPOT_ALREADY_RESERVED`, `SPOT_NOT_AVAILABLE`, `SPOT_NOT_BOOKABLE`, `INSUFFICIENT_BALANCE`, `REVIEW_ALREADY_EXISTS`, ... (see the table above) |
+| 409 | business codes | `SPOT_ALREADY_RESERVED`, `SPOT_NOT_AVAILABLE`, `SPOT_NOT_BOOKABLE`, `INSUFFICIENT_BALANCE`, `ALREADY_REVIEWED`, ... (see the table above) |
 | 409 | `CONSTRAINT_VIOLATION` | safety net: a database constraint rejected the write (for example two concurrent bookings of one slot) |
 | 413 | `FILE_TOO_LARGE` | upload above 5 MB |
 
