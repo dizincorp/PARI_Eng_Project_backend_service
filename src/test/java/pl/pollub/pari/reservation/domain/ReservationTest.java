@@ -80,12 +80,26 @@ class ReservationTest {
     void checkInOnlyInsideTheReservedPeriod() {
         reservation.markPaid(true);
 
-        assertThatThrownBy(() -> reservation.checkIn(START.minusSeconds(1))).isInstanceOf(IllegalStateTransitionException.class);
+        assertThatThrownBy(() -> reservation.checkIn(START.minusSeconds(5 * 60 + 1))).isInstanceOf(IllegalStateTransitionException.class);
         assertThatThrownBy(() -> reservation.checkIn(END)).isInstanceOf(IllegalStateTransitionException.class);
 
         reservation.checkIn(START.plusSeconds(60));
         assertThat(reservation.getStatus()).isEqualTo(ReservationStatus.IN_PROGRESS);
         assertThat(reservation.getCheckInAt()).isEqualTo(START.plusSeconds(60));
+    }
+
+    @Test
+    void checkInOpensFiveMinutesBeforeTheStartAndKeepsTheBookedInterval() {
+        reservation.markPaid(true);
+        Instant early = START.minusSeconds(5 * 60);
+
+        assertThat(reservation.earliestCheckIn()).isEqualTo(early);
+        reservation.checkIn(early);
+
+        assertThat(reservation.getStatus()).isEqualTo(ReservationStatus.IN_PROGRESS);
+        assertThat(reservation.getCheckInAt()).isEqualTo(early);
+        assertThat(reservation.getPeriod().start()).isEqualTo(START);
+        assertThat(reservation.getPeriod().end()).isEqualTo(END);
     }
 
     @Test

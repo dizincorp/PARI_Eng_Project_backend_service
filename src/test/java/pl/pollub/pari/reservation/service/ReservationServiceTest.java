@@ -279,10 +279,55 @@ class ReservationServiceTest extends ServiceTestBase {
     }
 
     @Test
+    void checkInSixMinutesEarlyIsRejectedWithTheMomentItOpens() {
+        ReservationView sixEarly = confirmed(NOW.plusSeconds(6 * 60), NOW.plusSeconds(3600));
+        assertThatThrownBy(() -> service.checkIn(driver.getId(), sixEarly.id(), sixEarly.pinCode(), null))
+                .isInstanceOfSatisfying(ConflictException.class, e -> {
+                    assertThat(e.getErrorCode()).isEqualTo("CHECK_IN_TOO_EARLY");
+                    assertThat(e.getDetails()).containsEntry("availableAt", NOW.plusSeconds(60));
+                });
+    }
+
+    @Test
+    void checkInExactlyFiveMinutesEarlyIsAcceptedWithTheBookedIntervalAndCost() {
+        ReservationView fiveEarly = confirmed(NOW.plusSeconds(5 * 60), NOW.plusSeconds(3600));
+        ReservationView in = service.checkIn(driver.getId(), fiveEarly.id(), fiveEarly.pinCode(), null);
+        assertThat(in.status()).isEqualTo(ReservationStatus.IN_PROGRESS);
+        assertThat(in.checkInAt()).isEqualTo(NOW);
+        assertThat(in.startsAt()).isEqualTo(fiveEarly.startsAt());
+        assertThat(in.endsAt()).isEqualTo(fiveEarly.endsAt());
+        assertThat(in.total()).isEqualByComparingTo(fiveEarly.total());
+    }
+
+    @Test
+    void checkInIsAcceptedFourMinutesEarly() {
+        ReservationView fourEarly = confirmed(NOW.plusSeconds(4 * 60), NOW.plusSeconds(3600));
+        assertThat(service.checkIn(driver.getId(), fourEarly.id(), fourEarly.pinCode(), null).status())
+                .isEqualTo(ReservationStatus.IN_PROGRESS);
+    }
+
+    @Test
+    void checkInIsAcceptedAtTheStart() {
+        ReservationView atStart = confirmed(NOW, NOW.plusSeconds(3600));
+        assertThat(service.checkIn(driver.getId(), atStart.id(), atStart.pinCode(), null).status())
+                .isEqualTo(ReservationStatus.IN_PROGRESS);
+    }
+
+    @Test
+    void anUnapprovedReservationCannotCheckInEvenInTheWindow() {
+        Reservation pending = persistReservation(spot, driver, vehicle, NOW.plusSeconds(60), NOW.plusSeconds(3600));
+        em.flush();
+
+        // no access code is issued before approval, so the reservation cannot be entered
+        assertThatThrownBy(() -> service.checkIn(driver.getId(), pending.getId(), "0000", null))
+                .isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
     void checkInWorksWithTheQrTokenAndNotBeforeTheStart() {
         ReservationView future = book(driver, T10, T12, VISA).reservation();
         assertThatThrownBy(() -> service.checkIn(driver.getId(), future.id(), future.pinCode(), null))
-                .hasMessageContaining("check-in is possible only between");
+                .isInstanceOfSatisfying(ConflictException.class, e -> assertThat(e.getErrorCode()).isEqualTo("CHECK_IN_TOO_EARLY"));
 
         ReservationView running = confirmed(NOW.minusSeconds(60), NOW.plusSeconds(3600));
         assertThat(service.checkIn(driver.getId(), running.id(), null, running.qrToken()).status())
