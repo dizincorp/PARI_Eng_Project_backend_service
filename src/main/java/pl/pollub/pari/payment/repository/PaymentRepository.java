@@ -18,6 +18,8 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID> {
 
     List<Payment> findByReservationIdOrderByCreatedAtAsc(UUID reservationId);
 
+    List<Payment> findByReservationIdIn(java.util.Collection<UUID> reservationIds);
+
     /** Transaction history of a user (as the driver), for support disputes (F22). */
     @Query("select p from Payment p where p.reservation.driver.id = :userId order by p.createdAt desc")
     Page<Payment> findByDriverId(@Param("userId") UUID userId, Pageable pageable);

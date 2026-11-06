@@ -499,6 +499,9 @@ PARI backend API version 0.0.1. Parking space rental portal. Authenticate with a
 | `activeBookingsCount` | integer (int32) | no |  |
 | `loyaltyPoints` | integer (int32) | no |  |
 | `currency` | string | no |  |
+| `summary` | object | no | completedReservations, totalSpent, totalParkingDurationMinutes, averageRating (null without reviews), reviewedReservations; over all completed sessions (PARI-60) |
+| `items` | array | no | one row per completed reservation, newest first: reservationId, spotName, checkInAt, checkOutAt, durationMinutes, amountPaid, currency, reviewed, rating (null until reviewed) |
+| `page`, `size`, `totalItems` | integer | no | query parameters `page` (default 0) and `size` (default 20, max 100) page `items` |
 
 ### LoginRequest
 
