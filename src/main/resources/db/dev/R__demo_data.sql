@@ -17,7 +17,7 @@
 --   * a payout is PAID when its release_at is in the past, SCHEDULED otherwise, CANCELLED after a refund
 --   * a spot is verified only when it has an APPROVED verification request; its rating is the average of its reviews
 --   * a spot is OCCUPIED only while a reservation of it is IN_PROGRESS
---   * reservations that hold a slot never overlap; future ones lie inside the weekly availability (06:00-22:00)
+--   * reservations that hold a slot never overlap, neither per space nor per vehicle; future ones lie inside the weekly availability (06:00-22:00)
 --   * times are relative to the day the database is created, in Europe/Warsaw
 --
 -- Fixed ids, so they can be pasted into requests:
@@ -62,7 +62,9 @@ BEGIN
 
     INSERT INTO vehicles (id, user_id, model, plate_number) VALUES
         ('00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-000000000002', 'Skoda Octavia', 'LU 12345'),
-        ('00000000-0000-0000-0000-0000000000a2', '00000000-0000-0000-0000-000000000003', 'Toyota Yaris',  'LU 67890');
+        ('00000000-0000-0000-0000-0000000000a2', '00000000-0000-0000-0000-000000000003', 'Toyota Yaris',  'LU 67890'),
+        -- a second car of Jan: his running session D0005 and his future bookings cannot share one vehicle (PARI-62)
+        ('00000000-0000-0000-0000-0000000000a3', '00000000-0000-0000-0000-000000000002', 'Honda Civic',   'LU 24680');
 
     INSERT INTO payment_methods (id, user_id, provider_ref, brand, last4, exp_month, exp_year, is_default) VALUES
         ('00000000-0000-0000-0000-0000000000b1', '00000000-0000-0000-0000-000000000002', 'pm_card_visa',       'visa',       '4242', 12, 2030, true),
@@ -163,9 +165,9 @@ BEGIN
              now() - interval '210 minutes', now() - interval '120 minutes', 'COMPLETED', 0, NULL, NULL, NULL),
         (5,  '00000000-0000-0000-0000-0000000000c4', '00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-0000000000a1',
              now() - interval '1 hour', now() + interval '23 hours', 'IN_PROGRESS', 0, NULL, NULL, NULL),
-        (6,  '00000000-0000-0000-0000-0000000000c1', '00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-0000000000a1',
+        (6,  '00000000-0000-0000-0000-0000000000c1', '00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-0000000000a3',
              pg_temp.local_ts(1, 10), pg_temp.local_ts(1, 12), 'CONFIRMED', 0, NULL, NULL, NULL),
-        (7,  '00000000-0000-0000-0000-0000000000c2', '00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-0000000000a1',
+        (7,  '00000000-0000-0000-0000-0000000000c2', '00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-0000000000a3',
              pg_temp.local_ts(2, 15), pg_temp.local_ts(2, 17), 'PENDING_APPROVAL', 0, NULL, NULL, now()),
         (8,  '00000000-0000-0000-0000-0000000000c3', '00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-0000000000a1',
              pg_temp.local_ts(7, 10), pg_temp.local_ts(7, 12), 'CANCELLED', 0, 'Plans changed', 120, NULL),

@@ -157,6 +157,7 @@ The migrations also insert the data the application cannot run without; every da
 | Guarantee | Mechanism |
 | --- | --- |
 | No double booking of a space, even for two simultaneous requests | exclusion constraint `reservations_no_overlap` on `(spot_id, tstzrange(starts_at, ends_at))` for slot-holding statuses; the loser gets `409 SPOT_ALREADY_RESERVED` |
+| One vehicle is never in two reservations at once, at any space (PARI-62) | exclusion constraint `reservations_vehicle_no_overlap` on `(vehicle_id, tstzrange(starts_at, ends_at))` for the same statuses; the service checks first and answers `409 VEHICLE_TIME_CONFLICT` with the conflicting reservation |
 | Reservation ends after it starts; money is not negative | `CHECK` constraints |
 | A space is active only with a declared right to it (F09) | `parking_spots_active_requires_declaration` |
 | Owner payout adds up | `payouts`: `net_minor = gross_minor - commission_minor`; one payout per reservation (`reservation_id` unique) |

@@ -82,7 +82,7 @@ class ReservationRepositoryTest extends DbTestBase {
         persistReservation(spot, driver, vehicle, T10, T12);
         persistReservation(spot, driver, vehicle, T12, T14);
         ParkingSpot other = persistSpot(owner, 51.25, 22.57, 1000);
-        persistReservation(other, driver, vehicle, T10, T12);
+        persistReservation(other, driver, persistVehicle(driver), T10, T12); // one vehicle cannot be in two places (PARI-62)
 
         em.flush();
 
@@ -142,7 +142,7 @@ class ReservationRepositoryTest extends DbTestBase {
     void ownerViewFiltersAreOptional() {
         Reservation r1 = persistReservation(spot, driver, vehicle, T10, T12);
         persistReservation(spot, driver, vehicle, T12, T14).markPaid(true);
-        persistReservation(persistSpot(persistUser(Role.OWNER), 51.3, 22.6, 1000), driver, vehicle, T10, T12);
+        persistReservation(persistSpot(persistUser(Role.OWNER), 51.3, 22.6, 1000), driver, persistVehicle(driver), T10, T12);
         flushAndClear();
 
         PageRequest page = PageRequest.of(0, 10);

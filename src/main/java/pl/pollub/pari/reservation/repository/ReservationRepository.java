@@ -39,6 +39,18 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID>,
                               @Param("start") Instant start,
                               @Param("end") Instant end);
 
+    /** A slot-holding reservation of the vehicle (at any spot) that overlaps [start, end), earliest first (PARI-62). */
+    @Query("""
+            select r from Reservation r
+            where r.vehicle.id = :vehicleId and r.status in :statuses
+              and r.period.start < :end and r.period.end > :start
+            order by r.period.start
+            """)
+    List<Reservation> findOverlappingForVehicle(@Param("vehicleId") UUID vehicleId,
+                                                @Param("statuses") Collection<ReservationStatus> statuses,
+                                                @Param("start") Instant start,
+                                                @Param("end") Instant end);
+
     /** Reservations of the spot that overlap [start, end), used for the month calendar. */
     @Query("""
             select r from Reservation r

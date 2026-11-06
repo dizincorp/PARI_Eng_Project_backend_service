@@ -57,8 +57,8 @@ class OverdueSessionServiceTest extends ServiceTestBase {
     @Test
     void onlySessionsPastTheEndPlusGraceAreDue() {
         Reservation overdueOne = running(NOW.minusSeconds(3 * 3600), NOW.minusSeconds(30 * 60));
-        // still inside the grace period (another space, so the slots do not overlap)
-        Reservation insideGrace = persistReservation(persistSpot(owner, 51.25, 22.57, 1000), driver, vehicle,
+        // still inside the grace period (another space and another vehicle, so nothing overlaps)
+        Reservation insideGrace = persistReservation(persistSpot(owner, 51.25, 22.57, 1000), driver, persistVehicle(driver),
                 NOW.minusSeconds(3 * 3600), NOW.minusSeconds(10 * 60));
         insideGrace.markPaid(true);
         insideGrace.checkIn(NOW.minusSeconds(2 * 3600));
