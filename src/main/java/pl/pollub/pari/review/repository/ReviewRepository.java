@@ -14,6 +14,9 @@ public interface ReviewRepository extends JpaRepository<Review, UUID> {
 
     boolean existsByReservationIdAndAuthorId(UUID reservationId, UUID authorId);
 
+    /** The reviews a user wrote for the given reservations. */
+    java.util.List<Review> findByAuthorIdAndReservationIdIn(UUID authorId, java.util.Collection<UUID> reservationIds);
+
     Page<Review> findBySpotIdAndStatusOrderByCreatedAtDesc(UUID spotId, ReviewStatus status, Pageable pageable);
 
     Page<Review> findByRevieweeIdAndStatusOrderByCreatedAtDesc(UUID revieweeId, ReviewStatus status, Pageable pageable);

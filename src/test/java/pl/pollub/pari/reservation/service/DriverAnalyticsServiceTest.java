@@ -85,8 +85,114 @@ class DriverAnalyticsServiceTest extends DbTestBase {
     }
 
     @Test
+    void aDriverWithoutCompletedSessionsGetsAnEmptyTableAndNoAverage() {
+        booking(0).markPaid(true);
+        em.flush();
+
+        DriverAnalyticsService.Statistics s = service.statistics(driver.getId(), 0, 20);
+
+        assertThat(s.items()).isEmpty();
+        assertThat(s.totalItems()).isZero();
+        assertThat(s.summary().completedReservations()).isZero();
+        assertThat(s.summary().totalSpent()).isEqualTo(Money.ZERO);
+        assertThat(s.summary().totalParkingDurationMinutes()).isZero();
+        assertThat(s.summary().averageRating()).isNull();
+        assertThat(s.summary().reviewedReservations()).isZero();
+    }
+
+    @Test
+    void completedSessionsAreListedNewestFirstWithTheirPaymentAndReview() {
+        Reservation older = completedBooking(driver, 0, 120);          // 120 minutes, reviewed 2
+        charge(older, PaymentType.CHARGE, 3250, true);
+        review(older, 2);
+        Reservation newer = completedBooking(driver, 1, 60);           // 60 minutes, not reviewed, penalty and a refund
+        charge(newer, PaymentType.CHARGE, 2000, true);
+        charge(newer, PaymentType.PENALTY, 500, true);
+        charge(newer, PaymentType.REFUND, 100, true);
+        charge(newer, PaymentType.CHARGE, 999, false);                  // a failed attempt is not money paid
+        Reservation upcoming = booking(5);                               // not completed: never listed
+        upcoming.markPaid(true);
+        em.flush();
+
+        DriverAnalyticsService.Statistics s = service.statistics(driver.getId(), 0, 20);
+
+        assertThat(s.items()).extracting(DriverAnalyticsService.SessionRow::reservationId)
+                .containsExactly(newer.getId(), older.getId());
+        DriverAnalyticsService.SessionRow second = s.items().get(1);
+        assertThat(second.spotName()).isEqualTo(spot.getName());
+        assertThat(second.durationMinutes()).isEqualTo(120);
+        assertThat(second.amountPaid()).isEqualTo(Money.pln(3250));
+        assertThat(second.reviewed()).isTrue();
+        assertThat(second.rating()).isEqualTo(2);
+        DriverAnalyticsService.SessionRow first = s.items().get(0);
+        assertThat(first.amountPaid()).isEqualTo(Money.pln(2400));
+        assertThat(first.reviewed()).isFalse();
+        assertThat(first.rating()).isNull();
+        assertThat(s.summary().completedReservations()).isEqualTo(2);
+        assertThat(s.summary().totalSpent()).isEqualTo(Money.pln(5650));
+        assertThat(s.summary().totalParkingDurationMinutes()).isEqualTo(180);
+        assertThat(s.summary().averageRating()).isEqualByComparingTo("2.00");
+        assertThat(s.summary().reviewedReservations()).isEqualTo(1);
+    }
+
+    @Test
+    void theTableIsPagedWhileTheSummaryCoversEverySession() {
+        for (int i = 0; i < 3; i++) {
+            charge(completedBooking(driver, i, 30), PaymentType.CHARGE, 1000, true);
+        }
+
+        DriverAnalyticsService.Statistics page1 = service.statistics(driver.getId(), 1, 2);
+
+        assertThat(page1.items()).hasSize(1);
+        assertThat(page1.page()).isEqualTo(1);
+        assertThat(page1.totalItems()).isEqualTo(3);
+        assertThat(page1.summary().completedReservations()).isEqualTo(3);
+        assertThat(page1.summary().totalSpent()).isEqualTo(Money.pln(3000));
+        assertThat(service.statistics(driver.getId(), 5, 2).items()).isEmpty();
+    }
+
+    @Test
+    void anotherDriversSessionsAreNeverIncluded() {
+        User other = persistUser(Role.DRIVER);
+        Vehicle otherVehicle = persistVehicle(other);
+        Reservation theirs = persistReservation(spot, other, otherVehicle, D1.plusSeconds(30 * 86_400L), D1.plusSeconds(30 * 86_400L + 7200));
+        theirs.markPaid(true);
+        theirs.checkIn(D1.plusSeconds(30 * 86_400L + 60));
+        theirs.checkOut(D1.plusSeconds(30 * 86_400L + 3660));
+        charge(theirs, PaymentType.CHARGE, 9900, true);
+        review(theirs, 5);
+        Reservation mine = completedBooking(driver, 0, 45);
+        charge(mine, PaymentType.CHARGE, 1500, true);
+        em.flush();
+
+        DriverAnalyticsService.Statistics s = service.statistics(driver.getId(), 0, 20);
+
+        assertThat(s.items()).extracting(DriverAnalyticsService.SessionRow::reservationId).containsExactly(mine.getId());
+        assertThat(s.summary().totalSpent()).isEqualTo(Money.pln(1500));
+        assertThat(s.summary().averageRating()).isNull();
+        assertThat(service.statistics(other.getId(), 0, 20).items()).extracting(DriverAnalyticsService.SessionRow::reservationId)
+                .containsExactly(theirs.getId());
+    }
+
+    @Test
     void onlyDriversHaveDriverStatistics() {
         assertThatThrownBy(() -> service.analytics(owner.getId())).isInstanceOf(ForbiddenException.class);
+    }
+
+    /** A paid reservation on the given day that was checked in one minute after its start and ran for {@code minutes}. */
+    private Reservation completedBooking(User who, int day, long minutes) {
+        Reservation r = booking(day);
+        r.markPaid(true);
+        Instant in = r.getPeriod().start().plusSeconds(60);
+        r.checkIn(in);
+        r.checkOut(in.plusSeconds(minutes * 60));
+        em.flush();
+        return r;
+    }
+
+    private void review(Reservation reservation, int rating) {
+        em.persist(new pl.pollub.pari.review.domain.Review(reservation, reservation.getDriver(), owner, spot, rating, null));
+        em.flush();
     }
 
     private Reservation booking(int day) {
