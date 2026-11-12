@@ -20,6 +20,7 @@ import pl.pollub.pari.support.service.SupportCommandService;
 import pl.pollub.pari.support.service.AuditEventView;
 import pl.pollub.pari.support.service.ModerationService;
 import pl.pollub.pari.support.service.StaffView;
+import pl.pollub.pari.support.service.SupportReservationView;
 import pl.pollub.pari.support.service.SupportTicketService;
 import pl.pollub.pari.support.service.TicketView;
 
@@ -103,6 +104,16 @@ public class SupportController {
     @GetMapping("/tickets/staff")
     public List<StaffView> staff(@CurrentUserId UUID userId) {
         return tickets.staff(userId);
+    }
+
+    /**
+     * The reservation linked to a ticket: spot, interval with time zone, vehicle plate, driver and owner (ids, names, e-mail,
+     * phone), check-in and check-out, amounts, penalty and refund state. No PIN, QR token or other access secret.
+     * SUPPORT or ADMIN only; 404 for an unknown ticket.
+     */
+    @GetMapping("/tickets/{id}/reservation")
+    public SupportReservationView reservation(@CurrentUserId UUID userId, @PathVariable UUID id) {
+        return tickets.reservationOf(userId, id);
     }
 
     /**

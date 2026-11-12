@@ -8,6 +8,7 @@ import pl.pollub.pari.common.exception.ConflictException;
 import pl.pollub.pari.common.exception.ForbiddenException;
 import pl.pollub.pari.common.exception.NotFoundException;
 import pl.pollub.pari.common.repository.AuditLogRepository;
+import pl.pollub.pari.payment.repository.PaymentRepository;
 import pl.pollub.pari.common.service.AuditTrail;
 import pl.pollub.pari.reservation.domain.Reservation;
 import pl.pollub.pari.reservation.domain.ReservationStatus;
@@ -25,6 +26,7 @@ import pl.pollub.pari.user.repository.UserRepository;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -44,10 +46,15 @@ public class SupportTicketService {
     private final Clock clock;
     private final ApplicationEventPublisher events;
     private final AuditLogRepository auditLog;
+    private final PaymentRepository payments;
+    private final ZoneId businessZone;
 
     public SupportTicketService(ReportRepository tickets, ReservationRepository reservations, UserRepository users,
-                                AuditTrail audit, Clock clock, ApplicationEventPublisher events, AuditLogRepository auditLog) {
+                                AuditTrail audit, Clock clock, ApplicationEventPublisher events, AuditLogRepository auditLog,
+                                PaymentRepository payments, ZoneId businessZone) {
         this.auditLog = auditLog;
+        this.payments = payments;
+        this.businessZone = businessZone;
         this.tickets = tickets;
         this.reservations = reservations;
         this.users = users;
@@ -155,6 +162,20 @@ public class SupportTicketService {
         requireSupport(supportId);
         return tickets.queue(status, type, priority, onlyUnassigned, PageRequest.of(page, size))
                 .map(t -> TicketView.of(t, true)).getContent();
+    }
+
+    /**
+     * The reservation of a ticket for the support page (PARI-81): spot, booking interval and time zone, vehicle, driver and
+     * owner with their account ids and contact data, lifecycle, amounts, payments and refund state. Never includes the PIN or
+     * the QR token. SUPPORT or ADMIN only; 404 when the ticket does not exist.
+     */
+    @Transactional(readOnly = true)
+    public SupportReservationView reservationOf(UUID supportId, UUID ticketId) {
+        requireSupport(supportId);
+        Report ticket = load(ticketId);
+        Reservation reservation = ticket.getReservation();
+        return SupportReservationView.of(reservation, payments.findByReservationIdOrderByCreatedAtAsc(reservation.getId()),
+                businessZone.getId());
     }
 
     /** The audit trail of a ticket, oldest first and paginated (PARI-84). Support only. */

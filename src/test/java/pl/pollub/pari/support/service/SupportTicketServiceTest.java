@@ -417,6 +417,59 @@ class SupportTicketServiceTest extends ServiceTestBase {
         assertThatThrownBy(() -> moderation.moderation(support.getId(), java.util.UUID.randomUUID())).isInstanceOf(NotFoundException.class);
     }
 
+    @Test
+    void supportSeesTheReservationOfATicketWithBothPartiesIdentifiedAndNoAccessSecrets() {
+        Reservation r = running(NOW.minus(Duration.ofHours(3)), NOW.minus(Duration.ofMinutes(20)));
+        TicketView view = tickets.create(owner.getId(), r.getId(), TicketType.VEHICLE_NOT_LEFT, "Still there"); // reporter: the owner
+
+        SupportReservationView context = tickets.reservationOf(support.getId(), view.id());
+
+        assertThat(context.reservationId()).isEqualTo(r.getId());
+        assertThat(context.code()).isEqualTo(r.getCode());
+        assertThat(context.status()).isEqualTo(ReservationStatus.IN_PROGRESS);
+        assertThat(context.driver().id()).isEqualTo(driver.getId());
+        assertThat(context.owner().id()).isEqualTo(owner.getId());
+        assertThat(context.driver().email()).isEqualTo(driver.getEmail());
+        assertThat(context.spot().id()).isEqualTo(spot.getId());
+        assertThat(context.spot().city()).isNotBlank();
+        assertThat(context.vehiclePlate()).isEqualTo(vehicle.getPlateNumber());
+        assertThat(context.timezone()).isEqualTo("Europe/Warsaw");
+        assertThat(context.startsAt()).isEqualTo(r.getPeriod().start());
+        assertThat(context.endsAt()).isEqualTo(r.getPeriod().end());
+        assertThat(context.lifecycle().checkInAt()).isEqualTo(r.getCheckInAt());
+        assertThat(context.lifecycle().total()).isEqualByComparingTo(r.getTotal().toDecimal());
+        assertThat(context.refundState()).isEqualTo("NONE");
+        assertThat(r.getPinCode()).isNotBlank();
+        assertThat(context.toString()).doesNotContain(r.getPinCode()).doesNotContain(r.getQrToken());
+    }
+
+    @Test
+    void theSupportContextShowsPaymentsAndTheRefundState() {
+        Reservation r = running(NOW.minus(Duration.ofHours(3)), NOW.minus(Duration.ofMinutes(20)));
+        TicketView view = tickets.create(owner.getId(), r.getId(), TicketType.VEHICLE_NOT_LEFT, "Still there");
+        pl.pollub.pari.payment.domain.Payment refund = new pl.pollub.pari.payment.domain.Payment(r,
+                pl.pollub.pari.payment.domain.PaymentType.REFUND, pl.pollub.pari.common.domain.Money.pln(500), "re_test_1");
+        refund.markSucceeded();
+        em.persist(refund);
+        em.flush();
+
+        SupportReservationView context = tickets.reservationOf(support.getId(), view.id());
+
+        assertThat(context.refundState()).isEqualTo("REFUNDED");
+        assertThat(context.payments()).singleElement().satisfies(pl -> assertThat(pl.amount()).isEqualByComparingTo("5.00"));
+    }
+
+    @Test
+    void theSupportContextIsForSupportOnlyAndAnUnknownTicketIsNotFound() {
+        Reservation r = running(NOW.minus(Duration.ofHours(3)), NOW.minus(Duration.ofMinutes(20)));
+        TicketView view = tickets.create(owner.getId(), r.getId(), TicketType.VEHICLE_NOT_LEFT, "Still there");
+
+        assertThatThrownBy(() -> tickets.reservationOf(owner.getId(), view.id())).isInstanceOf(ForbiddenException.class);
+        assertThatThrownBy(() -> tickets.reservationOf(driver.getId(), view.id())).isInstanceOf(ForbiddenException.class);
+        assertThatThrownBy(() -> tickets.reservationOf(support.getId(), java.util.UUID.randomUUID()))
+                .isInstanceOf(NotFoundException.class);
+    }
+
     private Reservation running(Instant start, Instant end) {
         Reservation r = persistReservation(spot, driver, vehicle, start, end);
         r.markPaid(true);
