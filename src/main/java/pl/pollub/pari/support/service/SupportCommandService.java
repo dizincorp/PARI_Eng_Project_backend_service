@@ -91,18 +91,16 @@ public class SupportCommandService {
     public TicketView sanction(UUID supportId, UUID ticketId, UUID userId, SanctionType type, String reason) {
         Report ticket = begin(supportId, ticketId, reason);
         User target = users.findById(userId).orElseThrow(() -> new NotFoundException("User not found"));
-        boolean participant = target.getId().equals(ticket.getReservation().getDriver().getId())
-                || target.getId().equals(ticket.getReservation().getSpot().getOwner().getId())
-                || (ticket.getReporter() != null && target.getId().equals(ticket.getReporter().getId()));
-        if (!participant) {
+        if (!ticket.involves(target.getId())) {
             throw new pl.pollub.pari.common.exception.BadRequestException("SANCTION_TARGET_NOT_PARTICIPANT",
                     "The user is not a participant of this ticket's reservation");
         }
-        moderation.apply(supportId, target, ticket, type, reason);
+        boolean autoBlocked = moderation.apply(supportId, target, ticket, type, reason);
         java.util.Map<String, Object> extra = new java.util.HashMap<>();
         extra.put("targetUserId", userId.toString());
         extra.put("sanctionType", type.name());
         extra.put("targetBlocked", target.isBlocked());
+        extra.put("autoBlocked", autoBlocked);
         return done(supportId, ticket, "SANCTION_" + type.name(), reason, extra);
     }
 
@@ -110,10 +108,8 @@ public class SupportCommandService {
     @Transactional
     public TicketView reassign(UUID supportId, UUID ticketId, UUID newAssigneeId, String reason) {
         Report ticket = begin(supportId, ticketId, reason);
-        UUID previous = ticket.getAssignedTo() == null ? null : ticket.getAssignedTo().getId();
+        Map<String, Object> extra = previousAssignee(ticket);
         ticket.reassign(ticketService.requireSupport(newAssigneeId));
-        java.util.Map<String, Object> extra = new java.util.HashMap<>();
-        extra.put("previousAssigneeId", previous == null ? null : previous.toString());
         return done(supportId, ticket, "REASSIGN", reason, extra);
     }
 
@@ -121,10 +117,8 @@ public class SupportCommandService {
     @Transactional
     public TicketView release(UUID supportId, UUID ticketId, String reason) {
         Report ticket = begin(supportId, ticketId, reason);
-        UUID previous = ticket.getAssignedTo() == null ? null : ticket.getAssignedTo().getId();
+        Map<String, Object> extra = previousAssignee(ticket);
         ticket.unassign();
-        java.util.Map<String, Object> extra = new java.util.HashMap<>();
-        extra.put("previousAssigneeId", previous == null ? null : previous.toString());
         return done(supportId, ticket, "RELEASE", reason, extra);
     }
 
@@ -172,6 +166,13 @@ public class SupportCommandService {
         Report ticket = begin(supportId, ticketId, reason);
         ticket.adjustEvacuationFee(Money.pln(feeMinor));
         return done(supportId, ticket, "EVACUATION_FEE_ADJUSTED", reason);
+    }
+
+    /** Audit metadata: who had the ticket before an assignment change (null when nobody). */
+    private static Map<String, Object> previousAssignee(Report ticket) {
+        Map<String, Object> extra = new java.util.HashMap<>();
+        extra.put("previousAssigneeId", ticket.getAssignedTo() == null ? null : ticket.getAssignedTo().getId().toString());
+        return extra;
     }
 
     private Report begin(UUID supportId, UUID ticketId, String reason) {

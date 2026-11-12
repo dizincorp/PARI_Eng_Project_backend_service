@@ -61,7 +61,7 @@ domain      JPA entities with their own rules, value objects, enums
 | `notification` | in-app notifications from reservation events | F07, F16, F25 |
 | `media` | image upload and serving | none |
 | `verification` | inspection requests: entities only | F10, F23-F25 |
-| `support` | tickets (reuse `reports`): create, queue, claim, messages, audited support commands, evacuation record (ADR 0005); sanctions through a command. No tow-company integration | F21, F22 |
+| `support` | tickets (reuse `reports`): create, queue, claim, messages, audited support commands, evacuation record (ADR 0005); staff directory, ticket release, audit timeline, reservation context for support, sanctions with escalation and a moderation lookup. No tow-company integration | F21, F22 |
 | `common` | `Money`, `TimeRange`, `BaseEntity`, encryption, audit trail, platform settings, error handling, scheduling switch | NF04, NF05 |
 
 Services of one module use services and, in places, repositories of another (for example `ReservationService` reads spaces, users and vehicles directly); cross-cutting reactions use **domain events** (section 5). The module boundary is a convention, not yet enforced by an architecture test.
@@ -166,4 +166,4 @@ Business values (commission, fees, timeouts, discounts) are **not** configuratio
 
 ## 10. Not implemented yet
 
-Refresh tokens and server-side logout, e-mail and phone verification, password reset, rate limiting, support reports and sanctions, inspection workflow for verified spaces, extending a reservation, PDF confirmation, real Stripe payments, e-mail and push notifications, the penalty in the owner's payout, a defined "total saved" for drivers, strict Polish phone-number validation, the Android client.
+Refresh tokens and server-side logout, e-mail and phone verification, password reset, rate limiting, inspection workflow for verified spaces, extending a reservation, PDF confirmation, real Stripe payments, e-mail and push notifications, the penalty in the owner's payout, a defined "total saved" for drivers, strict Polish phone-number validation, the Android client.

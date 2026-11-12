@@ -64,9 +64,11 @@ public class ModerationService {
     /**
      * Applies a sanction and writes it to the history. Rejects a block of a blocked account and an unblock of an account
      * that is not blocked (409). Reaching the warning limit blocks the account.
+     *
+     * @return true when this warning pushed the account over the limit and blocked it automatically
      */
     @Transactional
-    public void apply(UUID actorId, User target, Report ticket, SanctionType type, String reason) {
+    public boolean apply(UUID actorId, User target, Report ticket, SanctionType type, String reason) {
         User actor = users.getReferenceById(actorId);
         switch (type) {
             case BLOCK -> {
@@ -90,7 +92,9 @@ public class ModerationService {
                 && warningsSinceLastUnblock(target.getId()) >= settings.integer("warning_limit")) {
             target.block();
             sanctions.save(new Sanction(target, ticket, actor, SanctionType.BLOCK, "Warning limit reached"));
+            return true;
         }
+        return false;
     }
 
     /** The moderation state of an account. Support only. */

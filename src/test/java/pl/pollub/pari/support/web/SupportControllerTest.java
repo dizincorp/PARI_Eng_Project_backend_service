@@ -103,6 +103,16 @@ class SupportControllerTest {
     }
 
     @Test
+    void aLostRaceOnTheSameTicketAnswers409ConcurrentUpdate() throws Exception {
+        when(tickets.claim(any(), any())).thenThrow(new org.springframework.orm.ObjectOptimisticLockingFailureException(
+                pl.pollub.pari.support.domain.Report.class, TICKET));
+
+        mvc.perform(post("/api/support/tickets/{id}/claim", TICKET).header("X-User-Id", SUPPORT))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.errorCode").value("CONCURRENT_UPDATE"));
+    }
+
+    @Test
     void theSupportEndpointsNeedAuthentication() throws Exception {
         mvc.perform(get("/api/support/tickets/staff")).andExpect(status().isUnauthorized());
         mvc.perform(get("/api/support/users/blocked")).andExpect(status().isUnauthorized());

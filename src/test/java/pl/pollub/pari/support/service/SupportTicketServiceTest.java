@@ -351,6 +351,8 @@ class SupportTicketServiceTest extends ServiceTestBase {
         assertThat(moderation.moderation(support.getId(), driver.getId()).blocked()).isFalse();
         commands.sanction(support.getId(), view.id(), driver.getId(), SanctionType.WARNING, "Third");
 
+        assertThat(tickets.auditTrail(support.getId(), view.id(), 0, 50).items()).filteredOn(e -> e.action().equals("SUPPORT_SANCTION_WARNING"))
+                .extracting(e -> e.metadata().get("autoBlocked")).containsExactly(false, false, true);
         ModerationService.ModerationView view3 = moderation.moderation(support.getId(), driver.getId());
         assertThat(view3.blocked()).isTrue();
         assertThat(view3.warningCount()).isEqualTo(3);

@@ -157,6 +157,13 @@ public class Report extends BaseEntity {
         this.evacuationFee = fee;
     }
 
+    /** True for the driver and the owner of the ticket's reservation and for the reporter. */
+    public boolean involves(java.util.UUID userId) {
+        return (reporter != null && reporter.getId().equals(userId))
+                || reservation.getDriver().getId().equals(userId)
+                || reservation.getSpot().getOwner().getId().equals(userId);
+    }
+
     public boolean isOpen() {
         return status == ReportStatus.OPEN || status == ReportStatus.IN_PROGRESS;
     }
