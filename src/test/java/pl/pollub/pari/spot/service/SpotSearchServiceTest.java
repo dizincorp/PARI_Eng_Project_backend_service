@@ -88,7 +88,10 @@ class SpotSearchServiceTest extends ServiceTestBase {
 
         assertThat(search(2000, null, false, T10, T12)).extracting(h -> h.spot().id())
                 .containsExactly(cheap.getId(), farther.getId());
+        // the hour after T12 is the buffer of the reservation, so the space is still taken then
         assertThat(search(2000, null, false, T12, T14)).extracting(h -> h.spot().id())
+                .containsExactly(cheap.getId(), farther.getId());
+        assertThat(search(2000, null, false, T12.plusSeconds(3600), T14.plusSeconds(3600))).extracting(h -> h.spot().id())
                 .containsExactly(near.getId(), cheap.getId(), farther.getId());
     }
 

@@ -49,7 +49,10 @@ public record ReservationView(
         Instant checkInAt,
         Instant checkOutAt,
         BigDecimal overstayPenalty,
-        BigDecimal finalCost) {
+        BigDecimal finalCost,
+        Instant blockedUntil,
+        boolean autoCheckedOut,
+        boolean penaltyPending) {
 
     public static ReservationView of(Reservation r, UUID viewerId) {
         User owner = r.getSpot().getOwner();
@@ -94,6 +97,9 @@ public record ReservationView(
                 r.getCheckInAt(),
                 r.getCheckOutAt(),
                 r.getOverstayPenalty() == null ? null : r.getOverstayPenalty().toDecimal(),
-                r.getFinalCost() == null ? null : r.getFinalCost().toDecimal());
+                r.getFinalCost() == null ? null : r.getFinalCost().toDecimal(),
+                r.getBlockedUntil(),
+                r.isAutoCheckedOut(),
+                r.isPenaltyPending());
     }
 }

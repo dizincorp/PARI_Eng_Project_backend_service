@@ -38,7 +38,13 @@ public record ReservationEvent(
         /** Check-out after the grace period; the penalty is above zero. */
         OVERSTAY,
         /** The system ended a session the driver did not end (PARI-47); {@code penalty} may be zero. */
-        AUTO_CHECKOUT
+        AUTO_CHECKOUT,
+        /** Confirmed but never checked in before the reserved end (PARI-67). */
+        NO_SHOW,
+        /** Session reminders (PARI-73): 15 minutes before the end, at the end, and the final one after it. */
+        REMINDER_BEFORE_END,
+        REMINDER_AT_END,
+        REMINDER_FINAL
     }
 
     public static ReservationEvent of(Type type, Reservation r, UUID actorId) {

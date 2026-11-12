@@ -40,7 +40,7 @@ public interface ParkingSpotRepository extends JpaRepository<ParkingSpot, UUID> 
                     SELECT 1 FROM reservations r
                     WHERE r.spot_id = s.id
                       AND r.status IN ('PENDING_PAYMENT', 'PENDING_APPROVAL', 'CONFIRMED', 'IN_PROGRESS')
-                      AND tstzrange(r.starts_at, r.ends_at, '[)') && tstzrange(:start, :end, '[)'))
+                      AND tstzrange(r.starts_at, r.blocked_until, '[)') && tstzrange(:start, :end, '[)'))
             ORDER BY CASE WHEN EXISTS (
                            SELECT 1 FROM premium_subscriptions p
                            WHERE p.owner_id = s.owner_id AND p.status IN ('ACTIVE', 'CANCELLED') AND p.expires_at > now())

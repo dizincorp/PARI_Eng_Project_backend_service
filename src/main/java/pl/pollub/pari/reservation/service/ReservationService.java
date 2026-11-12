@@ -12,7 +12,11 @@ import pl.pollub.pari.common.exception.ConflictException;
 import pl.pollub.pari.common.exception.ForbiddenException;
 import pl.pollub.pari.common.exception.NotFoundException;
 import pl.pollub.pari.common.service.AuditTrail;
+import pl.pollub.pari.common.service.PlatformSettings;
 import pl.pollub.pari.payment.service.PaymentService;
+import pl.pollub.pari.support.domain.ReportStatus;
+import pl.pollub.pari.support.domain.TicketType;
+import pl.pollub.pari.support.repository.ReportRepository;
 import pl.pollub.pari.reservation.domain.BookingType;
 import pl.pollub.pari.reservation.domain.Reservation;
 import pl.pollub.pari.reservation.domain.ReservationStatus;
@@ -84,10 +88,13 @@ public class ReservationService {
     private final AuditTrail audit;
     private final Clock clock;
     private final ApplicationEventPublisher events;
+    private final PlatformSettings settings;
+    private final ReportRepository reports;
 
     public ReservationService(ReservationRepository reservations, ParkingSpotRepository spots, UserRepository users,
                               VehicleRepository vehicles, PaymentMethodRepository paymentMethods, AvailabilityService availability, PricingService pricing,
-                              PaymentService payments, AuditTrail audit, Clock clock, ApplicationEventPublisher events) {
+                              PaymentService payments, AuditTrail audit, Clock clock, ApplicationEventPublisher events,
+                              PlatformSettings settings, ReportRepository reports) {
         this.reservations = reservations;
         this.spots = spots;
         this.users = users;
@@ -99,6 +106,8 @@ public class ReservationService {
         this.audit = audit;
         this.clock = clock;
         this.events = events;
+        this.settings = settings;
+        this.reports = reports;
     }
 
     /** Price preview shown before the driver pays. Checks that the space exists and is bookable, not that the slot is free. */
@@ -148,7 +157,9 @@ public class ReservationService {
         if (!availability.isAvailable(spot, period)) {
             throw new ConflictException("SPOT_NOT_AVAILABLE", "The owner does not offer this space at the requested time");
         }
-        if (reservations.existsOverlapping(spot.getId(), ReservationStatus.SLOT_HOLDING, period.start(), period.end())) {
+        Duration buffer = Duration.ofMinutes(settings.integer("reservation_buffer_minutes"));
+        // the spot of an earlier reservation stays blocked for its buffer, so a new one may start only after that
+        if (reservations.existsOverlapping(spot.getId(), ReservationStatus.SLOT_HOLDING, period.start(), period.end().plus(buffer))) {
             throw slotTaken();
         }
         throwIfVehicleBusy(vehicle.getId(), period);
@@ -157,6 +168,7 @@ public class ReservationService {
         Reservation reservation = new Reservation(newCode(now), spot, driver, vehicle, period, quote.hourlyRate(),
                 quote.spotCost(), quote.serviceFee(), quote.commission(), quote.bookingType(), quote.durationDays(),
                 quote.durationMonths(), quote.baseCost(), quote.discountAmount());
+        reservation.applyBuffer(buffer);
         try {
             reservations.saveAndFlush(reservation);
         } catch (DataIntegrityViolationException e) {
@@ -265,7 +277,8 @@ public class ReservationService {
      * Ends a session the driver forgot to end (PARI-47): the reservation is IN_PROGRESS and its reserved end is at or before
      * {@code dueBefore} (end plus grace period). Done as the system, so the owner is not asked: the overstay is charged
      * like in a manual check-out, the space is freed, and both the driver and the owner are notified. The status is
-     * COMPLETED. Does nothing when the driver checked out in the meantime.
+     * COMPLETED with the auto-checked-out marker. Does nothing when the driver checked out in the meantime, or while a
+     * VEHICLE_NOT_LEFT ticket is open: then the spot stays blocked and support ends the session (PARI-70).
      *
      * @return true when the session was ended
      */
@@ -276,8 +289,41 @@ public class ReservationService {
                 || reservation.getPeriod().end().isAfter(dueBefore)) {
             return false;
         }
+        if (reports.existsByReservationIdAndTypeAndStatusIn(reservationId, TicketType.VEHICLE_NOT_LEFT, ReportStatus.OPEN_STATUSES)) {
+            // keep the spot blocked while the ticket is open, unless another reservation already starts there
+            Duration buffer = Duration.ofMinutes(settings.integer("reservation_buffer_minutes"));
+            Instant now = clock.instant();
+            Instant blocked = reservation.getBlockedUntil();
+            if (blocked.isBefore(now.plus(buffer.dividedBy(2)))
+                    && !reservations.existsOverlapping(reservation.getSpot().getId(), ReservationStatus.SLOT_HOLDING,
+                    blocked, now.plus(buffer))) {
+                reservation.extendBlockUntil(now.plus(buffer));
+            }
+            return false;
+        }
         Money penalty = finishSession(reservation, null, clock.instant(), "AUTO_CHECKED_OUT");
+        reservation.markAutoCheckedOut();
         events.publishEvent(ReservationEvent.autoCheckout(reservation, reservation.overstayMinutes(), penalty.toDecimal()));
+        return true;
+    }
+
+    /**
+     * Marks a CONFIRMED reservation whose reserved end has passed as NO_SHOW (PARI-67): no refund, the owner's payout stays
+     * scheduled, the slot is free. Does nothing when the state changed in the meantime.
+     *
+     * @return true when the reservation became NO_SHOW
+     */
+    @Transactional
+    public boolean markNoShow(UUID reservationId) {
+        Reservation reservation = reservations.findById(reservationId).orElse(null);
+        Instant now = clock.instant();
+        if (reservation == null || reservation.getStatus() != ReservationStatus.CONFIRMED
+                || now.isBefore(reservation.getPeriod().end())) {
+            return false;
+        }
+        reservation.markNoShow(now);
+        audit.record(null, "Reservation", reservation.getId(), "NO_SHOW", Map.of("code", reservation.getCode()));
+        events.publishEvent(ReservationEvent.of(ReservationEvent.Type.NO_SHOW, reservation, null));
         return true;
     }
 
@@ -289,7 +335,11 @@ public class ReservationService {
             reservation.applyOverstayPenalty(penalty);
         }
         reservation.checkOut(now);
-        if (!penalty.isZero()) {
+        if (!penalty.isZero() && reports.existsByReservationIdAndTypeAndStatusIn(reservation.getId(), TicketType.CANNOT_LEAVE,
+                ReportStatus.OPEN_STATUSES)) {
+            // the driver says they could not leave: support decides about the penalty (PARI-71)
+            reservation.holdPenalty();
+        } else if (!penalty.isZero()) {
             payments.chargePenalty(reservation, penalty, defaultPaymentToken(reservation.getDriver().getId()));
         }
         audit.record(actorId, "Reservation", reservation.getId(), auditAction,
@@ -298,6 +348,66 @@ public class ReservationService {
         spot.release();
         events.publishEvent(new SpotOccupancyChanged(spot.getId(), spot.getOccupancy(), now));
         return penalty;
+    }
+
+    // ---- commands for support (PARI-71); the caller (SupportCommandService) checks the role and the reason
+
+    /** Ends a running session on behalf of support. A penalty is charged like in a normal check-out unless a driver ticket holds it. */
+    @Transactional
+    public CheckOutView supportForceCheckOut(UUID supportId, UUID reservationId, String reason) {
+        Reservation reservation = reservations.findById(reservationId)
+                .orElseThrow(() -> new NotFoundException("Reservation not found"));
+        Money penalty = finishSession(reservation, supportId, clock.instant(), "SUPPORT_FORCED_CHECK_OUT");
+        if (!penalty.isZero() && !reservation.isPenaltyPending()) {
+            events.publishEvent(ReservationEvent.overstay(reservation, supportId, reservation.overstayMinutes(), penalty.toDecimal()));
+        }
+        return CheckOutView.of(reservation);
+    }
+
+    /** Decides about a held penalty: waive it, or charge it now. */
+    @Transactional
+    public void supportSettlePenalty(UUID supportId, UUID reservationId, boolean waive) {
+        Reservation reservation = reservations.findById(reservationId)
+                .orElseThrow(() -> new NotFoundException("Reservation not found"));
+        Money penalty = reservation.getOverstayPenalty();
+        reservation.settlePenalty(waive);
+        if (!waive && penalty != null && !penalty.isZero()) {
+            payments.chargePenalty(reservation, penalty, defaultPaymentToken(reservation.getDriver().getId()));
+        }
+        audit.record(supportId, "Reservation", reservation.getId(), waive ? "PENALTY_WAIVED" : "PENALTY_CHARGED",
+                Map.of("code", reservation.getCode()));
+    }
+
+    /** Cancels a reservation that has not started running and refunds the driver in full. */
+    @Transactional
+    public void supportCancelWithRefund(UUID supportId, UUID reservationId, String reason) {
+        Reservation reservation = reservations.findById(reservationId)
+                .orElseThrow(() -> new NotFoundException("Reservation not found"));
+        reservation.cancel(reason, clock.instant());
+        payments.refundInFull(reservation);
+        audit.record(supportId, "Reservation", reservation.getId(), "SUPPORT_CANCELLED", Map.of("code", reservation.getCode()));
+        events.publishEvent(ReservationEvent.of(ReservationEvent.Type.CANCELLED, reservation, supportId));
+    }
+
+    /** A no-show that was wrong: the reservation is cancelled and the driver is refunded in full. */
+    @Transactional
+    public void supportCorrectNoShow(UUID supportId, UUID reservationId, String reason) {
+        Reservation reservation = reservations.findById(reservationId)
+                .orElseThrow(() -> new NotFoundException("Reservation not found"));
+        reservation.correctNoShow(reason, clock.instant());
+        payments.refundInFull(reservation);
+        audit.record(supportId, "Reservation", reservation.getId(), "NO_SHOW_CORRECTED", Map.of("code", reservation.getCode()));
+        events.publishEvent(ReservationEvent.of(ReservationEvent.Type.CANCELLED, reservation, supportId));
+    }
+
+    /** Charges the evacuation fee to the driver's default payment method; a failure is recorded as a FAILED payment, not thrown. */
+    @Transactional
+    public void chargeEvacuationFee(UUID reservationId, Money fee) {
+        Reservation reservation = reservations.findById(reservationId)
+                .orElseThrow(() -> new NotFoundException("Reservation not found"));
+        if (!fee.isZero()) {
+            payments.chargePenalty(reservation, fee, defaultPaymentToken(reservation.getDriver().getId()));
+        }
     }
 
     /** The driver's running parking session; 404 when there is none. */

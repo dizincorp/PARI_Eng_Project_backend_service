@@ -16,6 +16,9 @@ import pl.pollub.pari.reservation.event.ReservationEvent;
 import pl.pollub.pari.spot.domain.Occupancy;
 import pl.pollub.pari.spot.domain.ParkingSpot;
 import pl.pollub.pari.support.ServiceTestBase;
+import pl.pollub.pari.support.domain.Report;
+import pl.pollub.pari.support.domain.TicketSource;
+import pl.pollub.pari.support.domain.TicketType;
 import pl.pollub.pari.user.domain.PaymentMethod;
 import pl.pollub.pari.user.domain.Role;
 import pl.pollub.pari.user.domain.User;
@@ -28,7 +31,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
-/** Spot price is 10.00 PLN/h, the penalty multiplier 1.5 and the grace period 15 minutes; the clock is fixed at NOW. */
+/** Spot price is 10.00 PLN/h, the penalty multiplier 1.5, the penalty grace 15 minutes and the auto check-out 60 minutes after the end; the clock is fixed at NOW. */
 @Import(OverdueSessionService.class)
 @RecordApplicationEvents
 class OverdueSessionServiceTest extends ServiceTestBase {
@@ -55,11 +58,11 @@ class OverdueSessionServiceTest extends ServiceTestBase {
     }
 
     @Test
-    void onlySessionsPastTheEndPlusGraceAreDue() {
-        Reservation overdueOne = running(NOW.minusSeconds(3 * 3600), NOW.minusSeconds(30 * 60));
-        // still inside the grace period (another space and another vehicle, so nothing overlaps)
+    void onlySessionsMoreThanAnHourPastTheEndAreDue() {
+        Reservation overdueOne = running(NOW.minusSeconds(3 * 3600), NOW.minusSeconds(90 * 60));
+        // past the penalty grace but still inside the hour before auto check-out (another space and another vehicle, so nothing overlaps)
         Reservation insideGrace = persistReservation(persistSpot(owner, 51.25, 22.57, 1000), driver, persistVehicle(driver),
-                NOW.minusSeconds(3 * 3600), NOW.minusSeconds(10 * 60));
+                NOW.minusSeconds(3 * 3600), NOW.minusSeconds(45 * 60));
         insideGrace.markPaid(true);
         insideGrace.checkIn(NOW.minusSeconds(2 * 3600));
         persistReservation(spot, driver, vehicle, NOW.plusSeconds(86_400), NOW.plusSeconds(90_000)).markPaid(true); // not started
@@ -73,7 +76,7 @@ class OverdueSessionServiceTest extends ServiceTestBase {
         PaymentMethod card = new PaymentMethod(driver, "pm_card_visa", "visa", "4242", 12, 2030);
         card.markDefault(true);
         em.persist(card);
-        Reservation r = running(NOW.minusSeconds(3 * 3600), NOW.minusSeconds(30 * 60));
+        Reservation r = running(NOW.minusSeconds(3 * 3600), NOW.minusSeconds(90 * 60));
         spot.occupy();
         em.flush();
 
@@ -81,12 +84,13 @@ class OverdueSessionServiceTest extends ServiceTestBase {
 
         assertThat(r.getStatus()).isEqualTo(ReservationStatus.COMPLETED);
         assertThat(r.getCheckOutAt()).isEqualTo(NOW);
-        assertThat(r.overstayMinutes()).isEqualTo(30);
+        assertThat(r.overstayMinutes()).isEqualTo(90);
+        assertThat(r.isAutoCheckedOut()).isTrue();
         assertThat(spot.getOccupancy()).isEqualTo(Occupancy.FREE);
-        // 30 min at 10.00/h x 1.5 = 7.50
+        // 90 min at 10.00/h x 1.5 = 22.50
         assertThat(payments.findByReservationIdOrderByCreatedAtAsc(r.getId()))
                 .extracting(Payment::getType, Payment::getStatus, p -> p.getAmount().amountMinor())
-                .containsExactly(tuple(PaymentType.PENALTY, PaymentStatus.SUCCEEDED, 750L));
+                .containsExactly(tuple(PaymentType.PENALTY, PaymentStatus.SUCCEEDED, 2250L));
         List<ReservationEvent> published = events.stream(ReservationEvent.class).toList();
         assertThat(published).singleElement().satisfies(e -> {
             assertThat(e.type()).isEqualTo(ReservationEvent.Type.AUTO_CHECKOUT);
@@ -117,6 +121,33 @@ class OverdueSessionServiceTest extends ServiceTestBase {
         assertThat(payments.findByReservationIdOrderByCreatedAtAsc(r.getId()))
                 .extracting(Payment::getType, Payment::getStatus)
                 .containsExactly(tuple(PaymentType.PENALTY, PaymentStatus.FAILED));
+    }
+
+    @Test
+    void anOpenVehicleNotLeftTicketKeepsTheSessionRunningAndTheSpotBlocked() {
+        Reservation r = running(NOW.minusSeconds(3 * 3600), NOW.minusSeconds(90 * 60));
+        em.persist(Report.ticket(r, owner, driver, TicketType.VEHICLE_NOT_LEFT, TicketSource.OWNER, "Still there"));
+        em.flush();
+
+        assertThat(overdue.endSession(r.getId(), overdue.dueBefore())).isFalse();
+
+        assertThat(r.getStatus()).isEqualTo(ReservationStatus.IN_PROGRESS);
+        assertThat(r.getBlockedUntil()).isAfterOrEqualTo(NOW.plusSeconds(60 * 60));
+        assertThat(events.stream(ReservationEvent.class)).isEmpty();
+    }
+
+    @Test
+    void anOpenCannotLeaveTicketHoldsThePenaltyInsteadOfChargingIt() {
+        Reservation r = running(NOW.minusSeconds(3 * 3600), NOW.minusSeconds(90 * 60));
+        em.persist(Report.ticket(r, driver, owner, TicketType.CANNOT_LEAVE, TicketSource.DRIVER, "The gate is closed"));
+        em.flush();
+
+        assertThat(overdue.endSession(r.getId(), overdue.dueBefore())).isTrue();
+
+        assertThat(r.getStatus()).isEqualTo(ReservationStatus.COMPLETED);
+        assertThat(r.isPenaltyPending()).isTrue();
+        assertThat(r.getOverstayPenalty().amountMinor()).isEqualTo(2250L);
+        assertThat(payments.findByReservationIdOrderByCreatedAtAsc(r.getId())).isEmpty();
     }
 
     /** A paid reservation that the driver checked in to and never ended. */

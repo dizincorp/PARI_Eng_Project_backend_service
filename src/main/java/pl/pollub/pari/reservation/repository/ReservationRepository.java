@@ -28,11 +28,11 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID>,
 
     boolean existsByVehicleIdAndStatusIn(UUID vehicleId, Collection<ReservationStatus> statuses);
 
-    /** True when a slot-holding reservation of the spot overlaps [start, end). */
+    /** True when a slot-holding reservation of the spot overlaps [start, end), counting the buffer after its end (PARI-69). */
     @Query("""
             select count(r) > 0 from Reservation r
             where r.spot.id = :spotId and r.status in :statuses
-              and r.period.start < :end and r.period.end > :start
+              and r.period.start < :end and r.blockedUntil > :start
             """)
     boolean existsOverlapping(@Param("spotId") UUID spotId,
                               @Param("statuses") Collection<ReservationStatus> statuses,
@@ -55,7 +55,7 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID>,
     @Query("""
             select r from Reservation r
             where r.spot.id = :spotId and r.status in :statuses
-              and r.period.start < :end and r.period.end > :start
+              and r.period.start < :end and r.blockedUntil > :start
             order by r.period.start
             """)
     List<Reservation> findOverlapping(@Param("spotId") UUID spotId,
@@ -93,6 +93,17 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID>,
         }
         return findAll(spec, pageable);
     }
+
+    /** CONFIRMED reservations whose reserved end has passed: nobody checked in (PARI-67). */
+    List<Reservation> findByStatusAndPeriodEndLessThanEqual(ReservationStatus status, Instant end);
+
+    /** Sessions still running after {@code end} (PARI-70, PARI-73). */
+    @Query("""
+            select r from Reservation r
+            where r.status = pl.pollub.pari.reservation.domain.ReservationStatus.IN_PROGRESS
+              and r.period.end <= :end
+            """)
+    List<Reservation> findRunningEndedBy(@Param("end") Instant end);
 
     /** Unpaid reservations older than the payment timeout (NF08): the scheduler cancels them and frees the slot. */
     List<Reservation> findByStatusAndCreatedAtBefore(ReservationStatus status, Instant createdBefore);

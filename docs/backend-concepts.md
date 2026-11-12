@@ -60,7 +60,8 @@ domain      JPA entities with their own rules, value objects, enums
 | `premium` | owner Premium plan | F08 |
 | `notification` | in-app notifications from reservation events | F07, F16, F25 |
 | `media` | image upload and serving | none |
-| `verification`, `support` | inspection requests, reports and sanctions: entities only | F10, F21-F25 |
+| `verification` | inspection requests: entities only | F10, F23-F25 |
+| `support` | tickets (reuse `reports`): create, queue, claim, messages, audited support commands, evacuation record (ADR 0005); sanctions through a command. No tow-company integration | F21, F22 |
 | `common` | `Money`, `TimeRange`, `BaseEntity`, encryption, audit trail, platform settings, error handling, scheduling switch | NF04, NF05 |
 
 Services of one module use services and, in places, repositories of another (for example `ReservationService` reads spaces, users and vehicles directly); cross-cutting reactions use **domain events** (section 5). The module boundary is a convention, not yet enforced by an architecture test.

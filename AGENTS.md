@@ -6,7 +6,7 @@ Instructions for AI coding agents (Claude Code, Codex, Copilot, Cursor, Gemini a
 
 PARI is a portal where private owners rent out parking spaces and drivers find, reserve, pay for and check in to them. This repository is the **backend service** of an engineering degree project (Lublin University of Technology, team of three). Product requirements are identified as F01-F25 and NF01-NF15 and live in the Confluence space *My Software Team* (page *PARI project documentation*). The Polish design document is authoritative; Confluence pages are the working copy.
 
-**Current state:** the data layer, services and REST controllers cover the whole rental flow (spaces, search, booking, payment, check-in/out, payouts, reviews, notifications, Premium), secured with Spring Security and JWT. Payments are behind a **mock** gateway (ADR 0004). The `X-User-Id` header works only with `pari.security.jwt.dev-header-auth=true` (profile `local` and tests). Planned: Stripe, refresh tokens, verification, support, S3-compatible storage. See `docs/backend-concepts.md`. Do not describe planned parts as existing.
+**Current state:** the data layer, services and REST controllers cover the whole rental flow (spaces, search, booking, payment, check-in/out, payouts, reviews, notifications, Premium), secured with Spring Security and JWT. Payments are behind a **mock** gateway (ADR 0004). The `X-User-Id` header works only with `pari.security.jwt.dev-header-auth=true` (profile `local` and tests). Support tickets, no-show, the one-hour buffer and auto check-out exist (ADR 0005). Planned: Stripe, refresh tokens, verification, S3-compatible storage. See `docs/backend-concepts.md`. Do not describe planned parts as existing.
 
 ## Stack
 
@@ -48,7 +48,7 @@ New code goes into the module that owns the concept. Do not create a module for 
 - The schema is owned by Flyway; Hibernate only validates it (`ddl-auto=validate`). Any entity change that touches columns needs a **new** migration `V<next>__<description>.sql`.
 - **Never edit a migration that is already on `main`.** Fix forward with a new one.
 - Enums are stored as strings (`@Enumerated(EnumType.STRING)`) with a `CHECK` constraint in the database; adding a value needs both a Java and a migration change.
-- `ReservationStatus.SLOT_HOLDING`, the `reservations_no_overlap` exclusion constraint and the native search query in `ParkingSpotRepository` must stay in sync. Change one, change all three and the tests.
+- `ReservationStatus.SLOT_HOLDING`, the `reservations_no_overlap` exclusion constraint and the native search query in `ParkingSpotRepository` must stay in sync (the constraint uses `blocked_until`, the reserved end plus the buffer). Change one, change all three and the tests.
 - `audit_log` is append-only (trigger). Never add update or delete paths for it.
 - PostgreSQL cannot infer the type of `? is null` for timestamps. For optional filters use a JPA `Specification` (see `ReservationRepository.findForOwner`), not `(:x is null or ...)`.
 
