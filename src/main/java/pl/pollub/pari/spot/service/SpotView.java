@@ -12,7 +12,7 @@ import java.util.UUID;
 
 /**
  * Read model of a parking space, built inside the service transaction so controllers never touch lazy entities.
- * {@code accessInstructions} is filled only for the owner of the space.
+ * {@code accessInstructions} and {@code ownerGatePin} are filled only for the owner of the space.
  */
 public record SpotView(
         UUID id,
@@ -37,6 +37,7 @@ public record SpotView(
         BigDecimal monthlyPrice,
         String currency,
         String accessInstructions,
+        String ownerGatePin,
         boolean autoAccept,
         boolean realtimeStatusEnabled,
         Occupancy occupancy,
@@ -81,6 +82,7 @@ public record SpotView(
                 spot.getMonthlyPrice() == null ? null : spot.getMonthlyPrice().toDecimal(),
                 spot.getHourlyPrice().currency(),
                 isOwner ? spot.getAccessInstructions() : null,
+                isOwner ? spot.getOwnerGatePin() : null,
                 spot.isAutoAccept(),
                 spot.isRealtimeStatusEnabled(),
                 spot.getOccupancy(),

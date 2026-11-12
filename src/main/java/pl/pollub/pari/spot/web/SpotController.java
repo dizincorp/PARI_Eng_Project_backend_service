@@ -7,6 +7,7 @@ import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.Size;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -63,12 +64,14 @@ public class SpotController {
             Set<String> amenities,
             List<String> photoKeys,
             boolean ownershipDeclared,
-            boolean requestVerification) {
+            boolean requestVerification,
+            @Size(max = 32) String ownerGatePin) {
     }
 
     /**
      * The prices are replaced as a whole: an absent {@code dailyPrice} or {@code monthlyPrice} removes the one that was set.
-     * An absent {@code amenities} or {@code autoAccept} keeps the current value.
+     * An absent {@code amenities} or {@code autoAccept} keeps the current value. The owner gate PIN (PARI-85) is replaced as a
+     * whole like the access instructions: a missing, null or blank {@code ownerGatePin} clears it.
      */
     public record UpdateSpotRequest(
             @NotBlank String name,
@@ -81,7 +84,8 @@ public class SpotController {
             @Positive Integer heightCm,
             String accessInstructions,
             Set<String> amenities,
-            Boolean autoAccept) {
+            Boolean autoAccept,
+            @Size(max = 32) String ownerGatePin) {
     }
 
     private final SpotService spotService;
@@ -101,7 +105,7 @@ public class SpotController {
                 r.postalCode(), r.country(), r.lat(), r.lng(), r.lengthCm(), r.widthCm(), r.heightCm(),
                 toMoney(r.hourlyPrice()), toMoneyOrNull(r.dailyPrice()), toMoneyOrNull(r.monthlyPrice()),
                 r.accessInstructions(), r.autoAccept() == null || r.autoAccept(),
-                r.amenities(), r.photoKeys(), r.ownershipDeclared(), r.requestVerification()));
+                r.amenities(), r.photoKeys(), r.ownershipDeclared(), r.requestVerification(), r.ownerGatePin()));
     }
 
     /** Map search. Public; the optional header only lets an owner see their own access instructions. */
@@ -135,7 +139,8 @@ public class SpotController {
     public SpotView update(@CurrentUserId UUID userId, @PathVariable UUID id, @Valid @RequestBody UpdateSpotRequest r) {
         return spotService.update(userId, id, new SpotService.UpdateSpotCommand(r.name(), r.description(),
                 toMoney(r.hourlyPrice()), toMoneyOrNull(r.dailyPrice()), toMoneyOrNull(r.monthlyPrice()),
-                r.lengthCm(), r.widthCm(), r.heightCm(), r.accessInstructions(), r.amenities(), r.autoAccept()));
+                r.lengthCm(), r.widthCm(), r.heightCm(), r.accessInstructions(), r.amenities(), r.autoAccept(),
+                r.ownerGatePin()));
     }
 
     /** Removes the space (archived). 409 while it has active or upcoming reservations. */

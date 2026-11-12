@@ -1,6 +1,7 @@
 package pl.pollub.pari.reservation.domain;
 
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Embedded;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -14,6 +15,7 @@ import pl.pollub.pari.common.domain.BaseEntity;
 import pl.pollub.pari.common.domain.IllegalStateTransitionException;
 import pl.pollub.pari.common.domain.Money;
 import pl.pollub.pari.common.domain.TimeRange;
+import pl.pollub.pari.common.security.EncryptedStringConverter;
 import pl.pollub.pari.spot.domain.ParkingSpot;
 import pl.pollub.pari.user.domain.User;
 import pl.pollub.pari.user.domain.Vehicle;
@@ -98,6 +100,18 @@ public class Reservation extends BaseEntity {
     private String pinCode;
 
     private String qrToken;
+
+    /**
+     * The space's owner-configured gate PIN as it was when the booking was confirmed (PARI-66), encrypted at rest. Never
+     * changed afterwards; null when the owner had none, and for reservations confirmed before the snapshots existed.
+     */
+    @Convert(converter = EncryptedStringConverter.class)
+    @Column(name = "owner_gate_pin_snapshot", columnDefinition = "text")
+    private String ownerGatePinSnapshot;
+
+    /** The space's access instructions as they were when the booking was confirmed; same rules as the gate PIN snapshot. */
+    @Column(name = "access_instructions_snapshot", columnDefinition = "text")
+    private String accessInstructionsSnapshot;
 
     private Instant checkInAt;
 
@@ -324,6 +338,8 @@ public class Reservation extends BaseEntity {
         byte[] token = new byte[18];
         RANDOM.nextBytes(token);
         this.qrToken = Base64.getUrlEncoder().withoutPadding().encodeToString(token);
+        this.ownerGatePinSnapshot = spot.getOwnerGatePin();
+        this.accessInstructionsSnapshot = spot.getAccessInstructions();
     }
 
     private void requireStatus(String action, ReservationStatus... allowed) {

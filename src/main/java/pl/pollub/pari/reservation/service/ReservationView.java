@@ -12,6 +12,11 @@ import java.util.UUID;
 /**
  * Read model of a reservation, built inside the service transaction. The access PIN and QR token are shown only to the
  * driver and only while the reservation is confirmed or running; the owner never sees them.
+ *
+ * <p>{@code ownerGatePinSnapshot} and {@code accessInstructionsSnapshot} are what the space's owner had configured when the
+ * reservation was confirmed (PARI-66). They stay on the reservation after check-out, cancellation or a later edit of the
+ * space, and only the driver and the owner of the reservation see them; they are null for reservations confirmed before
+ * the snapshots existed. The gate PIN is not the reservation's {@code pinCode}, which is the generated check-in code.
  */
 public record ReservationView(
         UUID id,
@@ -44,6 +49,8 @@ public record ReservationView(
         BigDecimal discountAmount,
         String pinCode,
         String qrToken,
+        String ownerGatePinSnapshot,
+        String accessInstructionsSnapshot,
         String cancelReason,
         Instant createdAt,
         Instant checkInAt,
@@ -92,6 +99,8 @@ public record ReservationView(
                 r.getDiscount().toDecimal(),
                 showAccess ? r.getPinCode() : null,
                 showAccess ? r.getQrToken() : null,
+                participant ? r.getOwnerGatePinSnapshot() : null,
+                participant ? r.getAccessInstructionsSnapshot() : null,
                 r.getCancelReason(),
                 r.getCreatedAt(),
                 r.getCheckInAt(),
