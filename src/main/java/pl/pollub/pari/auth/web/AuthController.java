@@ -3,7 +3,6 @@ package pl.pollub.pari.auth.web;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import org.springframework.http.HttpStatus;
@@ -25,14 +24,17 @@ import java.util.UUID;
 @RequestMapping("/api/auth")
 public class AuthController {
 
-    /** {@code role} is DRIVER or OWNER. The password must have 8 to 72 characters (BCrypt limit). */
+    /**
+     * Every new account gets both DRIVER and OWNER. {@code role} is optional and only chooses the panel the account starts
+     * in (DRIVER by default); VERIFIER, SUPPORT and ADMIN are rejected with 400. The password must have 8 to 72 characters (BCrypt limit).
+     */
     public record RegisterRequest(
             @NotBlank @Email @Size(max = 255) String email,
             @NotBlank @Size(min = 8, max = 72) String password,
             @NotBlank @Size(max = 100) String firstName,
             @NotBlank @Size(max = 100) String lastName,
             @Pattern(regexp = "^\\+?[0-9 ()-]{7,20}$", message = "must be a phone number") String phoneNumber,
-            @NotNull Role role) {
+            Role role) {
     }
 
     /** Updates the profile: a {@code phoneNumber} or {@code avatarUrl} that is left out stays unchanged, an empty one removes it. */

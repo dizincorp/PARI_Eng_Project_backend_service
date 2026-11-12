@@ -115,6 +115,16 @@ class SecurityRulesTest {
     }
 
     @Test
+    void registrationDoesNotRequireARole() throws Exception {
+        when(auth.register(any(), any(), any(), any(), any(), any()))
+                .thenReturn(new AuthService.UserView(USER, "jan@example.com", "Jan", "K", Role.DRIVER, 0));
+
+        mvc.perform(post("/api/auth/register").contentType("application/json").content("""
+                        {"email":"jan@example.com","password":"SecurePassword123!","firstName":"Jan","lastName":"K"}"""))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
     void registrationValidatesTheBody() throws Exception {
         mvc.perform(post("/api/auth/register").contentType("application/json").content("""
                         {"email":"not-an-email","password":"short","firstName":"","lastName":"K","role":"DRIVER"}"""))

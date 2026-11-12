@@ -32,15 +32,24 @@ import java.util.UUID;
 @Service
 public class AuthService {
 
-    /** Roles a person may choose when registering; elevated roles are granted by an administrator. */
+    /** Roles a person may name when registering; elevated roles are granted by an administrator. */
     private static final Set<Role> SELF_SERVICE_ROLES = EnumSet.of(Role.DRIVER, Role.OWNER);
 
     /** Hash of a random password, compared against when the e-mail is unknown so both failures take equally long. */
     private final String dummyHash;
 
-    /** {@code phoneNumber} is the caller's own number (null when none was given); it is never shown to other users. */
+    /**
+     * {@code role} is the active panel (a frontend preference); {@code roles} are all the permissions of the account, so a
+     * regular account shows both DRIVER and OWNER. {@code phoneNumber} is the caller's own number (null when none was given);
+     * it is never shown to other users.
+     */
     public record UserView(UUID id, String email, String firstName, String lastName, Role role, int loyaltyPoints,
-                           String avatarUrl, String phoneNumber) {
+                           String avatarUrl, String phoneNumber, List<Role> roles) {
+
+        public UserView(UUID id, String email, String firstName, String lastName, Role role, int loyaltyPoints,
+                        String avatarUrl, String phoneNumber) {
+            this(id, email, firstName, lastName, role, loyaltyPoints, avatarUrl, phoneNumber, List.of(role));
+        }
 
         public UserView(UUID id, String email, String firstName, String lastName, Role role, int loyaltyPoints) {
             this(id, email, firstName, lastName, role, loyaltyPoints, null, null);
@@ -52,7 +61,8 @@ public class AuthService {
 
         static UserView of(User u) {
             return new UserView(u.getId(), u.getEmail(), u.getFirstName(), u.getLastName(), u.getActiveRole(),
-                    u.getLoyaltyPoints(), u.getAvatarUrl(), u.getPhone());
+                    u.getLoyaltyPoints(), u.getAvatarUrl(), u.getPhone(),
+                    u.getRoles().stream().sorted().toList());
         }
     }
 
@@ -77,15 +87,24 @@ public class AuthService {
         this.dummyHash = passwordEncoder.encode(UUID.randomUUID().toString());
     }
 
+    /**
+     * Every new account gets both DRIVER and OWNER (PARI-79), so one account can book and list spaces. {@code role} is
+     * optional: DRIVER or OWNER only chooses the panel the account starts in (default DRIVER); an elevated role is
+     * rejected. Elevated roles are never granted here.
+     */
     @Transactional
     public UserView register(String email, String password, String firstName, String lastName, String phoneNumber, Role role) {
-        if (!SELF_SERVICE_ROLES.contains(role)) {
+        if (role != null && !SELF_SERVICE_ROLES.contains(role)) {
             throw new IllegalArgumentException("role must be DRIVER or OWNER");
         }
         if (users.existsByEmail(email.trim())) {
             throw emailTaken();
         }
-        User user = new User(email, passwordEncoder.encode(password), firstName.trim(), lastName.trim(), null, Set.of(role));
+        User user = new User(email, passwordEncoder.encode(password), firstName.trim(), lastName.trim(), null,
+                EnumSet.copyOf(SELF_SERVICE_ROLES));
+        if (role == Role.OWNER) {
+            user.switchRole(Role.OWNER);
+        }
         if (phoneNumber != null && !phoneNumber.isBlank()) {
             String hash = phoneHasher.hash(phoneNumber);
             if (users.existsByPhoneHash(hash)) {
