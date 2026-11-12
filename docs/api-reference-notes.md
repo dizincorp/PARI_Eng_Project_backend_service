@@ -14,7 +14,7 @@ The user id always comes from the token, never from the request body. Rules are 
 
 | Action | Rule | Failure |
 | --- | --- | --- |
-| Register | role must be `DRIVER` or `OWNER`; e-mail and phone number unique | `400`, `409 EMAIL_ALREADY_REGISTERED`, `409 PHONE_ALREADY_REGISTERED` |
+| Register | every account gets `DRIVER` and `OWNER`; the optional `role` (`DRIVER` or `OWNER`, else `400`) only sets the starting panel; e-mail and phone number unique | `400`, `409 EMAIL_ALREADY_REGISTERED`, `409 PHONE_ALREADY_REGISTERED` |
 | Create a space (`POST /api/spots`) | `OWNER` role, account not blocked, `ownershipDeclared = true` (F09), price > 0 | `403`, `400` |
 | Edit, archive, photos, calendar of a space | the owner of the space, or an `ADMIN` | `404` unknown space, `403` someone else's |
 | See a space | public while `ACTIVE`; any other status only for its owner | `404` |

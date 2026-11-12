@@ -68,7 +68,7 @@ sequenceDiagram
     participant D as PostgreSQL
     U->>F: fills the registration form
     F->>B: POST /api/auth/register {email, password, firstName, lastName, phoneNumber, role}
-    B->>B: role is DRIVER or OWNER, BCrypt the password, HMAC the phone number
+    B->>B: grant DRIVER and OWNER (role only picks the starting panel; elevated roles give 400), BCrypt the password, HMAC the phone number
     B->>D: tx: insert users + user_roles (unique email and phone_hash)
     B-->>F: 201 user (or 409 EMAIL_ALREADY_REGISTERED / PHONE_ALREADY_REGISTERED)
     F->>B: POST /api/auth/login {email, password}

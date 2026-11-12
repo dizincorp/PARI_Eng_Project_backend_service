@@ -41,7 +41,7 @@ class AuthServiceTest extends DbTestBase {
     JwtDecoder decoder;
 
     @Test
-    void registrationStoresABcryptHashAndTheChosenRole() {
+    void registrationStoresABcryptHashAndBothRegularRoles() {
         AuthService.UserView view = auth.register(" Jan@Example.com ", "SecurePassword123!", "Jan", "Kowalski", "+48501234567", Role.DRIVER);
 
         assertThat(view.email()).isEqualTo("jan@example.com");
@@ -49,7 +49,31 @@ class AuthServiceTest extends DbTestBase {
         User stored = users.findById(view.id()).orElseThrow();
         assertThat(stored.getPasswordHash()).startsWith("$2").doesNotContain("SecurePassword123!");
         assertThat(encoder.matches("SecurePassword123!", stored.getPasswordHash())).isTrue();
-        assertThat(stored.getRoles()).containsExactly(Role.DRIVER);
+        assertThat(stored.getRoles()).containsExactlyInAnyOrder(Role.DRIVER, Role.OWNER);
+        assertThat(view.roles()).containsExactly(Role.DRIVER, Role.OWNER);
+    }
+
+    @Test
+    void theRoleChosenAtRegistrationOnlySetsTheStartingPanel() {
+        AuthService.UserView asOwner = auth.register("o@example.com", "SecurePassword123!", "O", "O", null, Role.OWNER);
+        AuthService.UserView withoutRole = auth.register("n@example.com", "SecurePassword123!", "N", "N", null, null);
+
+        assertThat(asOwner.role()).isEqualTo(Role.OWNER);
+        assertThat(withoutRole.role()).isEqualTo(Role.DRIVER);
+        assertThat(users.findById(asOwner.id()).orElseThrow().getRoles()).containsExactlyInAnyOrder(Role.DRIVER, Role.OWNER);
+        assertThat(users.findById(withoutRole.id()).orElseThrow().getRoles()).containsExactlyInAnyOrder(Role.DRIVER, Role.OWNER);
+    }
+
+    @Test
+    void theProfileShowsBothRolesAndSwitchingThePanelKeepsThem() {
+        AuthService.UserView registered = auth.register("a@example.com", "SecurePassword123!", "A", "A", null, Role.DRIVER);
+
+        users.findById(registered.id()).orElseThrow().switchRole(Role.OWNER);
+        em.flush();
+
+        AuthService.UserView me = auth.me(registered.id());
+        assertThat(me.role()).isEqualTo(Role.OWNER);
+        assertThat(me.roles()).containsExactly(Role.DRIVER, Role.OWNER);
     }
 
     @Test
@@ -62,8 +86,11 @@ class AuthServiceTest extends DbTestBase {
 
     @Test
     void elevatedRolesCannotBeChosenAtRegistration() {
-        assertThatThrownBy(() -> auth.register("admin@example.com", "SecurePassword123!", "A", "B", null, Role.ADMIN))
-                .isInstanceOf(IllegalArgumentException.class);
+        for (Role elevated : new Role[]{Role.ADMIN, Role.SUPPORT, Role.VERIFIER}) {
+            assertThatThrownBy(() -> auth.register(elevated.name() + "@example.com", "SecurePassword123!", "A", "B", null, elevated))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+        assertThat(users.findByEmail("admin@example.com")).isEmpty();
     }
 
     @Test
@@ -77,7 +104,7 @@ class AuthServiceTest extends DbTestBase {
         assertThat(response.user().id()).isEqualTo(registered.id());
         Jwt jwt = decoder.decode(response.token());
         assertThat(jwt.getSubject()).isEqualTo(registered.id().toString());
-        assertThat(jwt.getClaimAsStringList("roles")).containsExactly("OWNER");
+        assertThat(jwt.getClaimAsStringList("roles")).containsExactly("DRIVER", "OWNER");
         assertThat(jwt.getExpiresAt()).isEqualTo(NOW.plusSeconds(86400));
     }
 
