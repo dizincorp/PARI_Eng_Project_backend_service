@@ -6,6 +6,7 @@ import pl.pollub.pari.notification.domain.Notification;
 import pl.pollub.pari.notification.domain.NotificationChannel;
 import pl.pollub.pari.notification.repository.NotificationRepository;
 import pl.pollub.pari.reservation.event.ReservationEvent;
+import pl.pollub.pari.support.event.TicketEvent;
 import pl.pollub.pari.user.repository.UserRepository;
 
 import java.util.Map;
@@ -64,9 +65,52 @@ public class NotificationEventListener {
                         "Kierowca nie zakończył postoju na miejscu " + place + " (" + e.code() + "), system zakończył go po "
                                 + e.overstayMinutes() + " min od planowanego końca." + fee);
             }
+            case NO_SHOW -> {
+                notify(e, e.driverId(), "RESERVATION_NO_SHOW", "Rezerwacja niewykorzystana",
+                        "Nie rozpoczęto postoju w ramach rezerwacji " + e.code() + " miejsca " + place
+                                + ". Rezerwacja została zamknięta, zwrot nie przysługuje.");
+                notify(e, e.ownerId(), "RESERVATION_NO_SHOW", "Kierowca nie przyjechał",
+                        "Kierowca nie rozpoczął postoju na miejscu " + place + " (" + e.code() + "). Otrzymasz zwykłą wypłatę.");
+            }
+            case REMINDER_BEFORE_END -> notify(e, e.driverId(), "SESSION_ENDING", "Postój kończy się za chwilę",
+                    "Rezerwacja " + e.code() + " miejsca " + place + " kończy się za kilka minut. Zakończ postój w aplikacji.");
+            case REMINDER_AT_END -> notify(e, e.driverId(), "SESSION_ENDED", "Czas rezerwacji minął",
+                    "Rezerwacja " + e.code() + " miejsca " + place + " dobiegła końca. Zakończ postój i opuść miejsce. "
+                            + "Po krótkim czasie naliczymy dopłatę.");
+            case REMINDER_FINAL -> notify(e, e.driverId(), "SESSION_FINAL_REMINDER", "Ostatnie przypomnienie",
+                    "Postój na miejscu " + place + " (" + e.code() + ") jest nadal otwarty. Wkrótce zakończymy go automatycznie. "
+                            + "Jeśli nie możesz wyjechać, zgłoś to w aplikacji.");
             case OVERSTAY -> notify(e, e.ownerId(), "OVERSTAY_ALERT", "Przekroczenie czasu postoju",
                     "Kierowca opuścił miejsce " + place + " (" + e.code() + ") " + e.overstayMinutes()
                             + " min po planowanym końcu. Naliczono dopłatę " + e.penalty().toPlainString() + " PLN.");
+        }
+    }
+
+    /** Ticket and evacuation notices (PARI-73). Support has no push: it works from the queue. */
+    @EventListener
+    public void on(TicketEvent e) {
+        String place = "\"" + e.spotName() + "\"";
+        Map<String, Object> data = Map.of("reservationId", e.reservationId().toString(), "code", e.reservationCode(),
+                "spotId", e.spotId().toString(), "ticketId", e.ticketId().toString());
+        switch (e.type()) {
+            case CREATED -> notifications.save(new Notification(users.getReferenceById(e.ownerId()), "TICKET_CREATED",
+                    "Zgłoszenie dla rezerwacji " + e.reservationCode(),
+                    "Dla rezerwacji " + e.reservationCode() + " miejsca " + place + " utworzono zgłoszenie do wsparcia.",
+                    data, NotificationChannel.IN_APP));
+            case EVACUATION_REQUESTED -> {
+                String body = "Pojazd z miejsca " + place + " (" + e.reservationCode() + ") zostanie przeniesiony: " + e.detail() + ".";
+                notifications.save(new Notification(users.getReferenceById(e.driverId()), "EVACUATION", "Ewakuacja pojazdu",
+                        body, data, NotificationChannel.IN_APP));
+                notifications.save(new Notification(users.getReferenceById(e.ownerId()), "EVACUATION", "Ewakuacja pojazdu",
+                        body, data, NotificationChannel.IN_APP));
+            }
+            case EVACUATION_UPDATED -> {
+                String body = "Status ewakuacji pojazdu z miejsca " + place + " (" + e.reservationCode() + "): " + e.detail() + ".";
+                notifications.save(new Notification(users.getReferenceById(e.driverId()), "EVACUATION", "Ewakuacja pojazdu",
+                        body, data, NotificationChannel.IN_APP));
+                notifications.save(new Notification(users.getReferenceById(e.ownerId()), "EVACUATION", "Ewakuacja pojazdu",
+                        body, data, NotificationChannel.IN_APP));
+            }
         }
     }
 

@@ -16,7 +16,9 @@ public enum ReservationStatus {
     CANCELLED,
     REJECTED,
     /** The owner did not accept in time (PARI-38); the driver is refunded. Does not hold the slot. */
-    EXPIRED;
+    EXPIRED,
+    /** Confirmed but the driver never checked in before the reserved end. No refund, the owner is paid, the slot is free. */
+    NO_SHOW;
 
     /** Statuses that keep the time slot taken. Must stay equal to the WHERE clause of the reservations_no_overlap constraint. */
     public static final Set<ReservationStatus> SLOT_HOLDING =

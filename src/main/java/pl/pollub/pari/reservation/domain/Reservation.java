@@ -32,6 +32,10 @@ import java.util.Base64;
 @Getter
 public class Reservation extends BaseEntity {
 
+    public static final int REMINDER_BEFORE_END = 1;
+    public static final int REMINDER_AT_END = 2;
+    public static final int REMINDER_FINAL = 4;
+
     private static final SecureRandom RANDOM = new SecureRandom();
 
     /** Human readable id, for example RSV-20261012-8F3K2. */
@@ -106,6 +110,19 @@ public class Reservation extends BaseEntity {
     @Column(name = "final_cost_minor")
     private Money finalCost;
 
+    /** The spot stays taken until this moment: the reserved end plus the unpaid buffer (PARI-69). */
+    @Column(name = "blocked_until", nullable = false)
+    private Instant blockedUntil;
+
+    /** True when the system, not the driver, ended the session (PARI-67). The status is still COMPLETED. */
+    private boolean autoCheckedOut;
+
+    /** The overstay penalty is set but not charged yet, because a driver ticket is open (PARI-71). */
+    private boolean penaltyPending;
+
+    /** Bit mask of the session reminders already sent, see {@link #REMINDER_BEFORE_END}. */
+    private int remindersSent;
+
     private String cancelReason;
 
     private Instant cancelledAt;
@@ -126,6 +143,7 @@ public class Reservation extends BaseEntity {
         this.total = spotCost.add(serviceFee);
         this.commission = commission;
         this.baseCost = spotCost;
+        this.blockedUntil = period.end();
         this.status = ReservationStatus.PENDING_PAYMENT;
     }
 
@@ -139,6 +157,67 @@ public class Reservation extends BaseEntity {
         this.durationMonths = durationMonths;
         this.baseCost = baseCost;
         this.discount = discount;
+    }
+
+    /** Blocks the spot for {@code buffer} after the reserved end (PARI-69). Call when booking. */
+    public void applyBuffer(java.time.Duration buffer) {
+        this.blockedUntil = period.end().plus(buffer);
+    }
+
+    /** Keeps the spot blocked longer, for example while a VEHICLE_NOT_LEFT ticket is open. Never shortens the block. */
+    public void extendBlockUntil(Instant until) {
+        if (until.isAfter(blockedUntil)) {
+            this.blockedUntil = until;
+        }
+    }
+
+    /** Never checked in by the reserved end: no refund, the owner is paid, the slot is free (PARI-67). */
+    public void markNoShow(Instant now) {
+        requireStatus("become a no-show", ReservationStatus.CONFIRMED);
+        if (now.isBefore(period.end())) {
+            throw new IllegalStateTransitionException("a reservation is a no-show only after " + period.end());
+        }
+        this.status = ReservationStatus.NO_SHOW;
+    }
+
+    /** The system ended the session (PARI-67). Call right after {@link #checkOut(Instant)}. */
+    public void markAutoCheckedOut() {
+        requireStatus("be marked as auto checked out", ReservationStatus.COMPLETED);
+        this.autoCheckedOut = true;
+    }
+
+    /** The penalty is set but not charged yet (a driver ticket is open). */
+    public void holdPenalty() {
+        this.penaltyPending = true;
+    }
+
+    /** Support decided about a held penalty (PARI-71): {@code finalCost} drops the penalty when it is waived. */
+    public void settlePenalty(boolean waive) {
+        if (!penaltyPending) {
+            throw new IllegalStateTransitionException("There is no pending penalty on this reservation");
+        }
+        this.penaltyPending = false;
+        if (waive) {
+            this.overstayPenalty = Money.ZERO;
+            this.finalCost = spotCost;
+        }
+    }
+
+    /** Support corrects a wrongly assigned no-show: the reservation is cancelled (the service refunds the driver). */
+    public void correctNoShow(String reason, Instant now) {
+        requireStatus("be corrected", ReservationStatus.NO_SHOW);
+        this.status = ReservationStatus.CANCELLED;
+        this.cancelReason = reason;
+        this.cancelledAt = now;
+    }
+
+    /** Marks a session reminder as sent; returns false when it was already sent. */
+    public boolean markReminderSent(int reminder) {
+        if ((remindersSent & reminder) != 0) {
+            return false;
+        }
+        this.remindersSent |= reminder;
+        return true;
     }
 
     /** The payment provider confirmed the payment. */

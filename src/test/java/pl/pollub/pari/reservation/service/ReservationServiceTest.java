@@ -113,7 +113,7 @@ class ReservationServiceTest extends ServiceTestBase {
     }
 
     @Test
-    void anOverlappingBookingIsRefusedButAnAdjacentOneIsAllowed() {
+    void anOverlappingBookingIsRefusedAndSoIsOneInsideTheBufferButOneAfterTheBufferIsAllowed() {
         book(driver, T10, T12, VISA);
         User other = persistUser(Role.DRIVER);
         Vehicle otherVehicle = persistVehicle(other);
@@ -122,8 +122,14 @@ class ReservationServiceTest extends ServiceTestBase {
                 new BookCommand(spot.getId(), otherVehicle.getId(), T10.plusSeconds(1800), T14, VISA)))
                 .isInstanceOfSatisfying(ConflictException.class, e -> assertThat(e.getErrorCode()).isEqualTo("SPOT_ALREADY_RESERVED"));
 
-        BookingResult adjacent = service.book(other.getId(), new BookCommand(spot.getId(), otherVehicle.getId(), T12, T14, VISA));
-        assertThat(adjacent.reservation().status()).isEqualTo(ReservationStatus.CONFIRMED);
+        // an adjacent booking starts inside the unpaid hour after T12 (the buffer), so it is refused too
+        assertThatThrownBy(() -> service.book(other.getId(), new BookCommand(spot.getId(), otherVehicle.getId(), T12, T14, VISA)))
+                .isInstanceOfSatisfying(ConflictException.class, e -> assertThat(e.getErrorCode()).isEqualTo("SPOT_ALREADY_RESERVED"));
+
+        Instant afterBuffer = T12.plus(Duration.ofHours(1));
+        BookingResult later = service.book(other.getId(), new BookCommand(spot.getId(), otherVehicle.getId(), afterBuffer, T14.plus(Duration.ofHours(1)), VISA));
+        assertThat(later.reservation().status()).isEqualTo(ReservationStatus.CONFIRMED);
+        assertThat(later.reservation().startsAt()).isEqualTo(afterBuffer);
     }
 
     @Test

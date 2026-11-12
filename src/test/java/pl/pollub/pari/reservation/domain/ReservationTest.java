@@ -188,4 +188,100 @@ class ReservationTest {
                 ReservationStatus.PENDING_PAYMENT, ReservationStatus.PENDING_APPROVAL,
                 ReservationStatus.CONFIRMED, ReservationStatus.IN_PROGRESS);
     }
+
+    @Test
+    void theBufferBlocksTheSpotAfterTheEndButNeverShortensIt() {
+        assertThat(reservation.getBlockedUntil()).isEqualTo(END);
+
+        reservation.applyBuffer(java.time.Duration.ofMinutes(60));
+        assertThat(reservation.getBlockedUntil()).isEqualTo(END.plusSeconds(3600));
+
+        reservation.extendBlockUntil(END.plusSeconds(1800));
+        assertThat(reservation.getBlockedUntil()).isEqualTo(END.plusSeconds(3600));
+        reservation.extendBlockUntil(END.plusSeconds(7200));
+        assertThat(reservation.getBlockedUntil()).isEqualTo(END.plusSeconds(7200));
+    }
+
+    @Test
+    void aConfirmedReservationBecomesNoShowOnlyAfterTheEnd() {
+        reservation.markPaid(true);
+
+        assertThatThrownBy(() -> reservation.markNoShow(END.minusSeconds(1))).isInstanceOf(IllegalStateTransitionException.class);
+        reservation.markNoShow(END);
+
+        assertThat(reservation.getStatus()).isEqualTo(ReservationStatus.NO_SHOW);
+        assertThat(reservation.holdsSlot()).isFalse();
+    }
+
+    @Test
+    void aSessionInProgressCannotBecomeNoShow() {
+        reservation.markPaid(true);
+        reservation.checkIn(START);
+
+        assertThatThrownBy(() -> reservation.markNoShow(END.plusSeconds(60))).isInstanceOf(IllegalStateTransitionException.class);
+    }
+
+    @Test
+    void checkInIsRejectedAfterTheEnd() {
+        reservation.markPaid(true);
+
+        assertThatThrownBy(() -> reservation.checkIn(END)).isInstanceOf(IllegalStateTransitionException.class);
+    }
+
+    @Test
+    void autoCheckOutKeepsStatusCompletedAndMarksIt() {
+        reservation.markPaid(true);
+        reservation.checkIn(START);
+        reservation.checkOut(END.plusSeconds(3600));
+        reservation.markAutoCheckedOut();
+
+        assertThat(reservation.getStatus()).isEqualTo(ReservationStatus.COMPLETED);
+        assertThat(reservation.isAutoCheckedOut()).isTrue();
+    }
+
+    @Test
+    void theAutoCheckedOutMarkNeedsACompletedReservation() {
+        reservation.markPaid(true);
+
+        assertThatThrownBy(reservation::markAutoCheckedOut).isInstanceOf(IllegalStateTransitionException.class);
+    }
+
+    @Test
+    void aHeldPenaltyCanBeWaivedWhichRestoresTheFinalCost() {
+        reservation.markPaid(true);
+        reservation.checkIn(START);
+        reservation.applyOverstayPenalty(Money.pln(500));
+        reservation.checkOut(END.plusSeconds(1800));
+        reservation.holdPenalty();
+        assertThat(reservation.getFinalCost()).isEqualTo(Money.pln(2500));
+
+        reservation.settlePenalty(true);
+
+        assertThat(reservation.isPenaltyPending()).isFalse();
+        assertThat(reservation.getOverstayPenalty()).isEqualTo(Money.ZERO);
+        assertThat(reservation.getFinalCost()).isEqualTo(Money.pln(2000));
+    }
+
+    @Test
+    void aPenaltyThatIsNotHeldCannotBeSettled() {
+        assertThatThrownBy(() -> reservation.settlePenalty(true)).isInstanceOf(IllegalStateTransitionException.class);
+    }
+
+    @Test
+    void aWrongNoShowCanBeCorrectedIntoACancellation() {
+        reservation.markPaid(true);
+        reservation.markNoShow(END);
+
+        reservation.correctNoShow("The gate was broken", END.plusSeconds(60));
+
+        assertThat(reservation.getStatus()).isEqualTo(ReservationStatus.CANCELLED);
+        assertThat(reservation.getCancelReason()).isEqualTo("The gate was broken");
+    }
+
+    @Test
+    void eachReminderIsSentOnlyOnce() {
+        assertThat(reservation.markReminderSent(Reservation.REMINDER_AT_END)).isTrue();
+        assertThat(reservation.markReminderSent(Reservation.REMINDER_AT_END)).isFalse();
+        assertThat(reservation.markReminderSent(Reservation.REMINDER_FINAL)).isTrue();
+    }
 }

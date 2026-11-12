@@ -34,10 +34,22 @@ public class SpotSearchService {
 
     private final ParkingSpotRepository spots;
     private final AvailabilityService availability;
+    private final pl.pollub.pari.common.service.PlatformSettings settings;
 
-    public SpotSearchService(ParkingSpotRepository spots, AvailabilityService availability) {
+    public SpotSearchService(ParkingSpotRepository spots, AvailabilityService availability,
+                             pl.pollub.pari.common.service.PlatformSettings settings) {
         this.spots = spots;
         this.availability = availability;
+        this.settings = settings;
+    }
+
+    /**
+     * A booking of [start, end) also needs the unpaid buffer after its end to be free (PARI-69), so the query looks
+     * for reservations overlapping [start, end + buffer), the same range that {@code book} checks.
+     */
+    private java.time.Instant searchEnd(SearchCriteria c) {
+        return c.end() == null ? null
+                : c.end().plus(java.time.Duration.ofMinutes(settings.integer("reservation_buffer_minutes")));
     }
 
     /**
@@ -61,7 +73,7 @@ public class SpotSearchService {
 
         List<ParkingSpotRepository.SpotDistance> candidates = spots.search(c.lat(), c.lng(), c.radiusMeters(),
                 c.maxHourlyPrice() == null ? null : c.maxHourlyPrice().amountMinor(), c.onlyVerified(),
-                c.start(), c.end(), c.size(), c.page() * c.size());
+                c.start(), searchEnd(c), c.size(), c.page() * c.size());
 
         Map<UUID, ParkingSpot> byId = spots.findAllById(candidates.stream().map(ParkingSpotRepository.SpotDistance::getId).toList())
                 .stream().collect(Collectors.toMap(ParkingSpot::getId, Function.identity()));

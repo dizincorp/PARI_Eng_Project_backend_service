@@ -14,8 +14,8 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Finds parking sessions that should have ended (PARI-47): IN_PROGRESS reservations whose reserved end plus the grace
- * period ({@code overstay_grace_minutes}) has passed. {@link ReservationService#autoCheckOut} ends them.
+ * Finds parking sessions that should have ended (PARI-47): IN_PROGRESS reservations whose reserved end plus
+ * {@code auto_checkout_after_end_minutes} (60, independent of the penalty grace) has passed. {@link ReservationService#autoCheckOut} ends them.
  */
 @Service
 public class OverdueSessionService {
@@ -35,7 +35,7 @@ public class OverdueSessionService {
 
     /** Point in time before which a reserved end counts as overdue. */
     public Instant dueBefore() {
-        return clock.instant().minus(Duration.ofMinutes(settings.integer("overstay_grace_minutes")));
+        return clock.instant().minus(Duration.ofMinutes(settings.integer("auto_checkout_after_end_minutes")));
     }
 
     @Transactional(readOnly = true)
