@@ -133,7 +133,11 @@ class SupportTicketServiceTest extends ServiceTestBase {
 
         assertThat(tickets.queue(support.getId(), null, null, null, false, 0, 10)).extracting(TicketView::type)
                 .containsExactly(TicketType.VEHICLE_NOT_LEFT, TicketType.OTHER);
+        User admin = persistUser(Role.ADMIN);
+        em.flush();
+        assertThat(tickets.queue(admin.getId(), null, null, null, false, 0, 10)).hasSize(2);
         assertThatThrownBy(() -> tickets.queue(driver.getId(), null, null, null, false, 0, 10)).isInstanceOf(ForbiddenException.class);
+        assertThatThrownBy(() -> tickets.queue(owner.getId(), null, null, null, false, 0, 10)).isInstanceOf(ForbiddenException.class);
     }
 
     @Test

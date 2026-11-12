@@ -56,6 +56,16 @@ The variant is decided by the Flyway locations: the migrations in `db/migration`
 
 Secrets come from environment variables: `PARI_DATA_KEY` (data encryption) and `PARI_JWT_SECRET` (token signing), each the base64 of at least 32 random bytes; the application refuses to start without them. The `local` profile contains development-only values for both, and also accepts the legacy `X-User-Id` header (`pari.security.jwt.dev-header-auth`) so scripts keep working; never enable that outside development.
 
+**Development staff accounts (ADMIN and SUPPORT).** Public registration never grants staff roles. To try the support workflows on a clean database, start the app with the `local` profile and set the passwords in your environment (no defaults exist, nothing is committed):
+
+```bash
+export PARI_DEV_ADMIN_PASSWORD='choose-a-password'      # 8 to 72 characters
+export PARI_DEV_SUPPORT_PASSWORD='choose-another-one'
+SPRING_PROFILES_ACTIVE=local ./gradlew bootRun
+```
+
+On PowerShell use `$env:PARI_DEV_ADMIN_PASSWORD = "..."`. At start-up the app creates `admin@pari.test` (role `ADMIN`) and `support@pari.test` (role `SUPPORT`); change the e-mails with `pari.dev.staff.admin-email` and `pari.dev.staff.support-email`. An account whose password is not set is skipped, an existing account is never changed, and running it again creates nothing. Log in with `POST /api/auth/login` as usual. This runs only under the `local` profile, so it never runs in production.
+
 The `local` profile contains a development-only encryption key. In every other environment set `PARI_DATA_KEY` (base64 of 32 random bytes, for example `openssl rand -base64 32`) and `PARI_DB_URL`, `PARI_DB_USER`, `PARI_DB_PASSWORD`.
 
 ## API documentation (Swagger UI)
