@@ -108,8 +108,22 @@ public class SupportCommandService {
     @Transactional
     public TicketView reassign(UUID supportId, UUID ticketId, UUID newAssigneeId, String reason) {
         Report ticket = begin(supportId, ticketId, reason);
+        UUID previous = ticket.getAssignedTo() == null ? null : ticket.getAssignedTo().getId();
         ticket.reassign(ticketService.requireSupport(newAssigneeId));
-        return done(supportId, ticket, "REASSIGN", reason);
+        java.util.Map<String, Object> extra = new java.util.HashMap<>();
+        extra.put("previousAssigneeId", previous == null ? null : previous.toString());
+        return done(supportId, ticket, "REASSIGN", reason, extra);
+    }
+
+    /** Releases a claimed ticket to the unassigned queue without closing it or changing its resolution (PARI-83). */
+    @Transactional
+    public TicketView release(UUID supportId, UUID ticketId, String reason) {
+        Report ticket = begin(supportId, ticketId, reason);
+        UUID previous = ticket.getAssignedTo() == null ? null : ticket.getAssignedTo().getId();
+        ticket.unassign();
+        java.util.Map<String, Object> extra = new java.util.HashMap<>();
+        extra.put("previousAssigneeId", previous == null ? null : previous.toString());
+        return done(supportId, ticket, "RELEASE", reason, extra);
     }
 
     /** Resolves and closes the ticket. The reason becomes the resolution shown to the participants. */
@@ -171,8 +185,25 @@ public class SupportCommandService {
     }
 
     private TicketView done(UUID supportId, Report ticket, String command, String reason) {
-        audit.record(supportId, "Ticket", ticket.getId(), "SUPPORT_" + command,
-                Map.of("reason", reason, "code", ticket.getReservation().getCode()));
+        return done(supportId, ticket, command, reason, Map.of());
+    }
+
+    /**
+     * Writes the audit entry of a command that succeeded. A command that fails rolls back and leaves no entry (documented
+     * audit policy). {@code extra} carries safe structured metadata such as the previous assignee; the state after the
+     * command is always recorded.
+     */
+    private TicketView done(UUID supportId, Report ticket, String command, String reason, Map<String, Object> extra) {
+        Map<String, Object> data = new java.util.LinkedHashMap<>(extra);
+        data.put("reason", reason);
+        data.put("code", ticket.getReservation().getCode());
+        data.put("outcome", "SUCCEEDED");
+        data.put("ticketStatus", ticket.getStatus().name());
+        data.put("assignedToId", ticket.getAssignedTo() == null ? null : ticket.getAssignedTo().getId().toString());
+        if (ticket.getEvacuationStatus() != null) {
+            data.put("evacuationStatus", ticket.getEvacuationStatus().name());
+        }
+        audit.record(supportId, "Ticket", ticket.getId(), "SUPPORT_" + command, data);
         return TicketView.of(ticket, true);
     }
 }

@@ -7,6 +7,7 @@ import org.springframework.transaction.annotation.Transactional;
 import pl.pollub.pari.common.exception.ConflictException;
 import pl.pollub.pari.common.exception.ForbiddenException;
 import pl.pollub.pari.common.exception.NotFoundException;
+import pl.pollub.pari.common.repository.AuditLogRepository;
 import pl.pollub.pari.common.service.AuditTrail;
 import pl.pollub.pari.reservation.domain.Reservation;
 import pl.pollub.pari.reservation.domain.ReservationStatus;
@@ -42,9 +43,11 @@ public class SupportTicketService {
     private final AuditTrail audit;
     private final Clock clock;
     private final ApplicationEventPublisher events;
+    private final AuditLogRepository auditLog;
 
     public SupportTicketService(ReportRepository tickets, ReservationRepository reservations, UserRepository users,
-                                AuditTrail audit, Clock clock, ApplicationEventPublisher events) {
+                                AuditTrail audit, Clock clock, ApplicationEventPublisher events, AuditLogRepository auditLog) {
+        this.auditLog = auditLog;
         this.tickets = tickets;
         this.reservations = reservations;
         this.users = users;
@@ -154,6 +157,28 @@ public class SupportTicketService {
                 .map(t -> TicketView.of(t, true)).getContent();
     }
 
+    /** The audit trail of a ticket, oldest first and paginated (PARI-84). Support only. */
+    @Transactional(readOnly = true)
+    public AuditEventView.Page auditTrail(UUID supportId, UUID ticketId, int page, int size) {
+        requireSupport(supportId);
+        load(ticketId);
+        var result = auditLog.findByEntityTypeAndEntityIdOrderByCreatedAtAscIdAsc("Ticket", ticketId, PageRequest.of(page, size));
+        java.util.Set<UUID> actorIds = result.getContent().stream().map(e -> e.getActorId())
+                .filter(java.util.Objects::nonNull).collect(java.util.stream.Collectors.toSet());
+        Map<UUID, String> names = new java.util.HashMap<>();
+        users.findAllById(actorIds).forEach(u -> names.put(u.getId(), u.getFirstName() + " " + u.getLastName()));
+        List<AuditEventView> items = result.getContent().stream()
+                .map(e -> AuditEventView.of(e, e.getActorId() == null ? null : names.get(e.getActorId()))).toList();
+        return new AuditEventView.Page(items, page, size, result.getTotalElements());
+    }
+
+    /** Active support agents and administrators who can take a ticket (PARI-83). Support only. */
+    @Transactional(readOnly = true)
+    public List<StaffView> staff(UUID supportId) {
+        requireSupport(supportId);
+        return users.findActiveStaff(Role.SUPPORT, Role.ADMIN).stream().map(StaffView::of).toList();
+    }
+
     /** Support takes a ticket from the queue. */
     @Transactional
     public TicketView claim(UUID supportId, UUID ticketId) {
@@ -163,7 +188,8 @@ public class SupportTicketService {
             throw new ConflictException("TICKET_ALREADY_CLAIMED", "Another support employee already took this ticket");
         }
         ticket.claim(support);
-        audit.record(supportId, "Ticket", ticket.getId(), "TICKET_CLAIMED", Map.of());
+        audit.record(supportId, "Ticket", ticket.getId(), "TICKET_CLAIMED",
+                Map.of("assignedToId", supportId.toString(), "ticketStatus", ticket.getStatus().name()));
         return TicketView.of(ticket, true);
     }
 

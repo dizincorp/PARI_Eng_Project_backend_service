@@ -17,6 +17,8 @@ import pl.pollub.pari.support.domain.SanctionType;
 import pl.pollub.pari.support.domain.TicketPriority;
 import pl.pollub.pari.support.domain.TicketType;
 import pl.pollub.pari.support.service.SupportCommandService;
+import pl.pollub.pari.support.service.AuditEventView;
+import pl.pollub.pari.support.service.StaffView;
 import pl.pollub.pari.support.service.SupportTicketService;
 import pl.pollub.pari.support.service.TicketView;
 
@@ -73,6 +75,24 @@ public class SupportController {
         return tickets.queue(userId, status, type, priority, unassigned, page, Math.min(Math.max(size, 1), 100));
     }
 
+    /** Support agents and administrators who can be assigned a ticket (SUPPORT or ADMIN only). */
+    @GetMapping("/staff")
+    public List<StaffView> staff(@CurrentUserId UUID userId) {
+        return tickets.staff(userId);
+    }
+
+    /**
+     * The audit timeline of a ticket, oldest first, paginated (default 50 per page, at most 200). It holds claims,
+     * reassignments, releases, penalty decisions, cancellations, no-show corrections, force check-outs, sanctions and
+     * evacuation changes. Only successful commands are recorded; a failed one leaves no entry. SUPPORT or ADMIN only.
+     */
+    @GetMapping("/{id}/audit")
+    public AuditEventView.Page audit(@CurrentUserId UUID userId, @PathVariable UUID id,
+                                     @RequestParam(defaultValue = "0") int page,
+                                     @RequestParam(defaultValue = "50") int size) {
+        return tickets.auditTrail(userId, id, Math.max(page, 0), Math.min(Math.max(size, 1), 200));
+    }
+
     @PostMapping("/{id}/claim")
     public TicketView claim(@CurrentUserId UUID userId, @PathVariable UUID id) {
         return tickets.claim(userId, id);
@@ -106,6 +126,12 @@ public class SupportController {
     @PostMapping("/{id}/commands/sanction")
     public TicketView sanction(@CurrentUserId UUID userId, @PathVariable UUID id, @Valid @RequestBody SanctionRequest r) {
         return commands.sanction(userId, id, r.userId(), r.type(), r.reason());
+    }
+
+    /** Returns a claimed ticket to the unassigned queue; it stays open. A reason is required. */
+    @PostMapping("/{id}/commands/release")
+    public TicketView release(@CurrentUserId UUID userId, @PathVariable UUID id, @Valid @RequestBody ReasonRequest r) {
+        return commands.release(userId, id, r.reason());
     }
 
     @PostMapping("/{id}/commands/reassign")

@@ -58,6 +58,12 @@ public class ApiExceptionHandler {
         return error(HttpStatus.CONFLICT, e.getErrorCode(), e.getMessage(), e.getDetails());
     }
 
+    /** Two requests changed the same row at once; the loser can reload and try again. */
+    @ExceptionHandler(org.springframework.orm.ObjectOptimisticLockingFailureException.class)
+    ResponseEntity<ApiError> concurrentUpdate(org.springframework.orm.ObjectOptimisticLockingFailureException e) {
+        return error(HttpStatus.CONFLICT, "CONCURRENT_UPDATE", "The data was changed by someone else, reload and try again");
+    }
+
     @ExceptionHandler(IllegalStateTransitionException.class)
     ResponseEntity<ApiError> illegalTransition(IllegalStateTransitionException e) {
         return error(HttpStatus.CONFLICT, "INVALID_STATE", e.getMessage());

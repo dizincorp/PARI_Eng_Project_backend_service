@@ -6,6 +6,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.event.ApplicationEvents;
 import org.springframework.test.context.event.RecordApplicationEvents;
+import pl.pollub.pari.common.domain.IllegalStateTransitionException;
 import pl.pollub.pari.common.exception.ConflictException;
 import pl.pollub.pari.common.exception.ForbiddenException;
 import pl.pollub.pari.common.exception.NotFoundException;
@@ -25,6 +26,7 @@ import pl.pollub.pari.user.domain.Vehicle;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -222,6 +224,96 @@ class SupportTicketServiceTest extends ServiceTestBase {
         assertThat(r.getFinalCost()).isEqualTo(r.getSpotCost());
         assertThatThrownBy(() -> commands.close(support.getId(), view.id(), "Again"))
                 .isInstanceOfSatisfying(ConflictException.class, e -> assertThat(e.getErrorCode()).isEqualTo("TICKET_CLOSED"));
+    }
+
+    @Test
+    void theStaffDirectoryListsActiveSupportAndAdminAccountsOnly() {
+        User admin = persistUser(Role.ADMIN);
+        User blockedSupport = persistUser(Role.SUPPORT);
+        blockedSupport.block();
+        em.flush();
+
+        List<StaffView> staff = tickets.staff(support.getId());
+
+        assertThat(staff).extracting(StaffView::id).contains(support.getId(), admin.getId())
+                .doesNotContain(driver.getId(), owner.getId(), blockedSupport.getId());
+        assertThat(staff).allSatisfy(s -> assertThat(s.roles()).isNotEmpty());
+        assertThatThrownBy(() -> tickets.staff(driver.getId())).isInstanceOf(ForbiddenException.class);
+        assertThatThrownBy(() -> tickets.staff(owner.getId())).isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
+    void aReleasedTicketGoesBackToTheQueueStaysOpenAndCanBeClaimedAgain() {
+        Reservation r = running(NOW.minus(Duration.ofHours(3)), NOW.minus(Duration.ofMinutes(20)));
+        TicketView view = tickets.create(owner.getId(), r.getId(), TicketType.VEHICLE_NOT_LEFT, "Still there");
+        User other = persistUser(Role.SUPPORT);
+        em.flush();
+        tickets.claim(support.getId(), view.id());
+
+        TicketView released = commands.release(support.getId(), view.id(), "Going off shift");
+
+        assertThat(released.assignedToId()).isNull();
+        assertThat(released.status()).isEqualTo(ReportStatus.OPEN);
+        assertThat(released.resolution()).isNull();
+        assertThat(tickets.queue(support.getId(), ReportStatus.OPEN, null, null, true, 0, 10)).extracting(TicketView::id)
+                .contains(view.id());
+        assertThat(tickets.claim(other.getId(), view.id()).assignedToId()).isEqualTo(other.getId());
+    }
+
+    @Test
+    void releaseNeedsAReasonAnAssignedOpenTicketAndTheSupportRole() {
+        Reservation r = running(NOW.minus(Duration.ofHours(3)), NOW.minus(Duration.ofMinutes(20)));
+        TicketView view = tickets.create(owner.getId(), r.getId(), TicketType.VEHICLE_NOT_LEFT, "Still there");
+
+        assertThatThrownBy(() -> commands.release(support.getId(), view.id(), "Not assigned yet"))
+                .isInstanceOf(IllegalStateTransitionException.class);
+        tickets.claim(support.getId(), view.id());
+        assertThatThrownBy(() -> commands.release(support.getId(), view.id(), " ")).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> commands.release(driver.getId(), view.id(), "x")).isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
+    void theAuditTrailListsEverySuccessfulCommandOldestFirstWithActorReasonAndOutcome() {
+        Reservation r = running(NOW.minus(Duration.ofHours(3)), NOW.minus(Duration.ofMinutes(10)));
+        spot.occupy();
+        TicketView view = tickets.create(owner.getId(), r.getId(), TicketType.VEHICLE_NOT_LEFT, "Still there");
+        User other = persistUser(Role.SUPPORT);
+        em.flush();
+        tickets.claim(support.getId(), view.id());
+        commands.reassign(support.getId(), view.id(), other.getId(), "Other agent knows the owner");
+        commands.release(other.getId(), view.id(), "Back to the queue");
+        commands.forceCheckOut(support.getId(), view.id(), "Driver confirmed by phone");
+        assertThatThrownBy(() -> commands.forceCheckOut(support.getId(), view.id(), "Again")).isInstanceOf(RuntimeException.class);
+
+        AuditEventView.Page page = tickets.auditTrail(support.getId(), view.id(), 0, 50);
+
+        assertThat(page.items()).extracting(AuditEventView::action).containsExactly("TICKET_CREATED", "TICKET_CLAIMED",
+                "SUPPORT_REASSIGN", "SUPPORT_RELEASE", "SUPPORT_FORCE_CHECK_OUT");
+        AuditEventView reassign = page.items().get(2);
+        assertThat(reassign.actorId()).isEqualTo(support.getId());
+        assertThat(reassign.actorName()).isNotBlank();
+        assertThat(reassign.reason()).isEqualTo("Other agent knows the owner");
+        assertThat(reassign.outcome()).isEqualTo("SUCCEEDED");
+        assertThat(reassign.metadata()).containsEntry("assignedToId", other.getId().toString())
+                .containsEntry("previousAssigneeId", support.getId().toString()).doesNotContainKey("reason");
+        assertThat(page.total()).isEqualTo(5);
+    }
+
+    @Test
+    void theAuditTrailIsPaginatedAndForSupportOnly() {
+        Reservation r = running(NOW.minus(Duration.ofHours(3)), NOW.minus(Duration.ofMinutes(20)));
+        TicketView view = tickets.create(owner.getId(), r.getId(), TicketType.VEHICLE_NOT_LEFT, "Still there");
+        tickets.claim(support.getId(), view.id());
+
+        AuditEventView.Page first = tickets.auditTrail(support.getId(), view.id(), 0, 1);
+        AuditEventView.Page second = tickets.auditTrail(support.getId(), view.id(), 1, 1);
+
+        assertThat(first.items()).extracting(AuditEventView::action).containsExactly("TICKET_CREATED");
+        assertThat(second.items()).extracting(AuditEventView::action).containsExactly("TICKET_CLAIMED");
+        assertThat(first.total()).isEqualTo(2);
+        assertThatThrownBy(() -> tickets.auditTrail(owner.getId(), view.id(), 0, 10)).isInstanceOf(ForbiddenException.class);
+        assertThatThrownBy(() -> tickets.auditTrail(support.getId(), java.util.UUID.randomUUID(), 0, 10))
+                .isInstanceOf(NotFoundException.class);
     }
 
     private Reservation running(Instant start, Instant end) {
