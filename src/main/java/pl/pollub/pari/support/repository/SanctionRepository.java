@@ -11,5 +11,7 @@ public interface SanctionRepository extends JpaRepository<Sanction, UUID> {
 
     List<Sanction> findByUserIdOrderByCreatedAtDesc(UUID userId);
 
+    java.util.Optional<Sanction> findFirstByUserIdAndTypeOrderByCreatedAtDesc(UUID userId, SanctionType type);
+
     long countByUserIdAndType(UUID userId, SanctionType type);
 }

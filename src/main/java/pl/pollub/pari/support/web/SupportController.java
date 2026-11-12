@@ -18,6 +18,7 @@ import pl.pollub.pari.support.domain.TicketPriority;
 import pl.pollub.pari.support.domain.TicketType;
 import pl.pollub.pari.support.service.SupportCommandService;
 import pl.pollub.pari.support.service.AuditEventView;
+import pl.pollub.pari.support.service.ModerationService;
 import pl.pollub.pari.support.service.StaffView;
 import pl.pollub.pari.support.service.SupportTicketService;
 import pl.pollub.pari.support.service.TicketView;
@@ -27,7 +28,7 @@ import java.util.UUID;
 
 /** The support page API (PARI-70, PARI-71, PARI-72). The SUPPORT or ADMIN role is checked in the services (403 otherwise). */
 @RestController
-@RequestMapping("/api/support/tickets")
+@RequestMapping("/api/support")
 public class SupportController {
 
     /** Every support command carries a reason; it is audited. */
@@ -57,14 +58,37 @@ public class SupportController {
 
     private final SupportTicketService tickets;
     private final SupportCommandService commands;
+    private final ModerationService moderation;
 
-    public SupportController(SupportTicketService tickets, SupportCommandService commands) {
+    public SupportController(SupportTicketService tickets, SupportCommandService commands, ModerationService moderation) {
         this.tickets = tickets;
         this.commands = commands;
+        this.moderation = moderation;
+    }
+
+    /** Accounts that are blocked now (SUPPORT or ADMIN only), with the block reason and the warnings that count. */
+    @GetMapping("/users/blocked")
+    public List<ModerationService.BlockedUserView> blockedUsers(@CurrentUserId UUID userId,
+                                                                @RequestParam(defaultValue = "0") int page,
+                                                                @RequestParam(defaultValue = "20") int size) {
+        return moderation.blockedUsers(userId, Math.max(page, 0), Math.min(Math.max(size, 1), 100));
+    }
+
+    /** Blocked or not, warnings that count now and the whole sanction history of an account (SUPPORT or ADMIN only). */
+    @GetMapping("/users/{userId}/moderation")
+    public ModerationService.ModerationView moderation(@CurrentUserId UUID actorId, @PathVariable UUID userId) {
+        return moderation.moderation(actorId, userId);
+    }
+
+    /** Unblocks an account without a ticket. A reason is required; earlier sanctions are kept, 409 when it is not blocked. */
+    @PostMapping("/users/{userId}/unblock")
+    public ModerationService.ModerationView unblock(@CurrentUserId UUID actorId, @PathVariable UUID userId,
+                                                    @Valid @RequestBody ReasonRequest r) {
+        return moderation.unblock(actorId, userId, r.reason());
     }
 
     /** The shared queue, high priority first, then the oldest. */
-    @GetMapping
+    @GetMapping("/tickets")
     public List<TicketView> queue(@CurrentUserId UUID userId,
                                   @RequestParam(required = false) ReportStatus status,
                                   @RequestParam(required = false) TicketType type,
@@ -76,7 +100,7 @@ public class SupportController {
     }
 
     /** Support agents and administrators who can be assigned a ticket (SUPPORT or ADMIN only). */
-    @GetMapping("/staff")
+    @GetMapping("/tickets/staff")
     public List<StaffView> staff(@CurrentUserId UUID userId) {
         return tickets.staff(userId);
     }
@@ -86,77 +110,77 @@ public class SupportController {
      * reassignments, releases, penalty decisions, cancellations, no-show corrections, force check-outs, sanctions and
      * evacuation changes. Only successful commands are recorded; a failed one leaves no entry. SUPPORT or ADMIN only.
      */
-    @GetMapping("/{id}/audit")
+    @GetMapping("/tickets/{id}/audit")
     public AuditEventView.Page audit(@CurrentUserId UUID userId, @PathVariable UUID id,
                                      @RequestParam(defaultValue = "0") int page,
                                      @RequestParam(defaultValue = "50") int size) {
         return tickets.auditTrail(userId, id, Math.max(page, 0), Math.min(Math.max(size, 1), 200));
     }
 
-    @PostMapping("/{id}/claim")
+    @PostMapping("/tickets/{id}/claim")
     public TicketView claim(@CurrentUserId UUID userId, @PathVariable UUID id) {
         return tickets.claim(userId, id);
     }
 
-    @PostMapping("/{id}/messages")
+    @PostMapping("/tickets/{id}/messages")
     public TicketView message(@CurrentUserId UUID userId, @PathVariable UUID id, @Valid @RequestBody NoteRequest r) {
         return tickets.addMessage(userId, id, r.body(), r.internalNote());
     }
 
-    @PostMapping("/{id}/commands/force-check-out")
+    @PostMapping("/tickets/{id}/commands/force-check-out")
     public TicketView forceCheckOut(@CurrentUserId UUID userId, @PathVariable UUID id, @Valid @RequestBody ReasonRequest r) {
         return commands.forceCheckOut(userId, id, r.reason());
     }
 
-    @PostMapping("/{id}/commands/settle-penalty")
+    @PostMapping("/tickets/{id}/commands/settle-penalty")
     public TicketView settlePenalty(@CurrentUserId UUID userId, @PathVariable UUID id, @Valid @RequestBody SettlePenaltyRequest r) {
         return commands.settlePenalty(userId, id, r.waive(), r.reason());
     }
 
-    @PostMapping("/{id}/commands/cancel-with-refund")
+    @PostMapping("/tickets/{id}/commands/cancel-with-refund")
     public TicketView cancelWithRefund(@CurrentUserId UUID userId, @PathVariable UUID id, @Valid @RequestBody ReasonRequest r) {
         return commands.cancelWithRefund(userId, id, r.reason());
     }
 
-    @PostMapping("/{id}/commands/correct-no-show")
+    @PostMapping("/tickets/{id}/commands/correct-no-show")
     public TicketView correctNoShow(@CurrentUserId UUID userId, @PathVariable UUID id, @Valid @RequestBody ReasonRequest r) {
         return commands.correctNoShow(userId, id, r.reason());
     }
 
-    @PostMapping("/{id}/commands/sanction")
+    @PostMapping("/tickets/{id}/commands/sanction")
     public TicketView sanction(@CurrentUserId UUID userId, @PathVariable UUID id, @Valid @RequestBody SanctionRequest r) {
         return commands.sanction(userId, id, r.userId(), r.type(), r.reason());
     }
 
     /** Returns a claimed ticket to the unassigned queue; it stays open. A reason is required. */
-    @PostMapping("/{id}/commands/release")
+    @PostMapping("/tickets/{id}/commands/release")
     public TicketView release(@CurrentUserId UUID userId, @PathVariable UUID id, @Valid @RequestBody ReasonRequest r) {
         return commands.release(userId, id, r.reason());
     }
 
-    @PostMapping("/{id}/commands/reassign")
+    @PostMapping("/tickets/{id}/commands/reassign")
     public TicketView reassign(@CurrentUserId UUID userId, @PathVariable UUID id, @Valid @RequestBody ReassignRequest r) {
         return commands.reassign(userId, id, r.assigneeId(), r.reason());
     }
 
     /** Resolves and closes the ticket; the reason is the resolution. */
-    @PostMapping("/{id}/commands/close")
+    @PostMapping("/tickets/{id}/commands/close")
     public TicketView close(@CurrentUserId UUID userId, @PathVariable UUID id, @Valid @RequestBody ReasonRequest r) {
         return commands.close(userId, id, r.reason());
     }
 
-    @PostMapping("/{id}/evacuation")
+    @PostMapping("/tickets/{id}/evacuation")
     public TicketView requestEvacuation(@CurrentUserId UUID userId, @PathVariable UUID id, @Valid @RequestBody EvacuationRequest r) {
         return commands.requestEvacuation(userId, id, r.destination(), r.reason());
     }
 
-    @PostMapping("/{id}/evacuation/status")
+    @PostMapping("/tickets/{id}/evacuation/status")
     public TicketView advanceEvacuation(@CurrentUserId UUID userId, @PathVariable UUID id,
                                         @Valid @RequestBody EvacuationStatusRequest r) {
         return commands.advanceEvacuation(userId, id, r.status(), r.reason());
     }
 
-    @PostMapping("/{id}/evacuation/fee")
+    @PostMapping("/tickets/{id}/evacuation/fee")
     public TicketView adjustEvacuationFee(@CurrentUserId UUID userId, @PathVariable UUID id,
                                           @Valid @RequestBody EvacuationFeeRequest r) {
         return commands.adjustEvacuationFee(userId, id, r.feeMinor(), r.reason());

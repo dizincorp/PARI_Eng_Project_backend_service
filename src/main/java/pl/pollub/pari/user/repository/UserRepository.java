@@ -14,6 +14,9 @@ public interface UserRepository extends JpaRepository<User, java.util.UUID> {
 
     boolean existsByPhoneHash(String phoneHash);
 
+    org.springframework.data.domain.Page<User> findByStatusOrderByLastNameAscFirstNameAsc(
+            pl.pollub.pari.user.domain.UserStatus status, org.springframework.data.domain.Pageable pageable);
+
     /** Active accounts with the SUPPORT or ADMIN role, for the assignment list (PARI-83). */
     @Query("""
             select distinct u from User u

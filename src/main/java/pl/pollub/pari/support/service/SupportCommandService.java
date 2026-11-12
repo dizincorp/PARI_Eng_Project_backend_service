@@ -31,19 +31,19 @@ public class SupportCommandService {
     private final SupportTicketService ticketService;
     private final ReservationService reservationService;
     private final UserRepository users;
-    private final SanctionRepository sanctions;
+    private final ModerationService moderation;
     private final AuditTrail audit;
     private final PlatformSettings settings;
     private final Clock clock;
     private final ApplicationEventPublisher events;
 
     public SupportCommandService(SupportTicketService ticketService, ReservationService reservationService, UserRepository users,
-                                 SanctionRepository sanctions, AuditTrail audit, PlatformSettings settings, Clock clock,
+                                 ModerationService moderation, AuditTrail audit, PlatformSettings settings, Clock clock,
                                  ApplicationEventPublisher events) {
         this.ticketService = ticketService;
         this.reservationService = reservationService;
         this.users = users;
-        this.sanctions = sanctions;
+        this.moderation = moderation;
         this.audit = audit;
         this.settings = settings;
         this.clock = clock;
@@ -83,25 +83,27 @@ public class SupportCommandService {
     }
 
     /**
-     * Warns the user (type WARNING) or blocks the account (BLOCK). Reaching {@code warning_limit} warnings blocks the
-     * account automatically (F22).
+     * Warns (WARNING), blocks (BLOCK) or unblocks (UNBLOCK) a participant of the ticket's reservation: its driver, its owner
+     * or the reporter. Any other user id is rejected with 400 SANCTION_TARGET_NOT_PARTICIPANT. The escalation rule is
+     * described on {@link ModerationService}.
      */
     @Transactional
     public TicketView sanction(UUID supportId, UUID ticketId, UUID userId, SanctionType type, String reason) {
         Report ticket = begin(supportId, ticketId, reason);
-        User support = users.getReferenceById(supportId);
         User target = users.findById(userId).orElseThrow(() -> new NotFoundException("User not found"));
-        sanctions.save(new Sanction(target, ticket, support, type, reason));
-        switch (type) {
-            case BLOCK -> target.block();
-            case UNBLOCK -> target.unblock();
-            case WARNING -> {
-                if (sanctions.countByUserIdAndType(userId, SanctionType.WARNING) >= settings.integer("warning_limit")) {
-                    target.block();
-                }
-            }
+        boolean participant = target.getId().equals(ticket.getReservation().getDriver().getId())
+                || target.getId().equals(ticket.getReservation().getSpot().getOwner().getId())
+                || (ticket.getReporter() != null && target.getId().equals(ticket.getReporter().getId()));
+        if (!participant) {
+            throw new pl.pollub.pari.common.exception.BadRequestException("SANCTION_TARGET_NOT_PARTICIPANT",
+                    "The user is not a participant of this ticket's reservation");
         }
-        return done(supportId, ticket, "SANCTION_" + type.name(), reason);
+        moderation.apply(supportId, target, ticket, type, reason);
+        java.util.Map<String, Object> extra = new java.util.HashMap<>();
+        extra.put("targetUserId", userId.toString());
+        extra.put("sanctionType", type.name());
+        extra.put("targetBlocked", target.isBlocked());
+        return done(supportId, ticket, "SANCTION_" + type.name(), reason, extra);
     }
 
     /** Hands the ticket to another support employee. */

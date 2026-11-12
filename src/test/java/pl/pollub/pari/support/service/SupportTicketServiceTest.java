@@ -7,6 +7,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.event.ApplicationEvents;
 import org.springframework.test.context.event.RecordApplicationEvents;
 import pl.pollub.pari.common.domain.IllegalStateTransitionException;
+import pl.pollub.pari.common.exception.BadRequestException;
 import pl.pollub.pari.common.exception.ConflictException;
 import pl.pollub.pari.common.exception.ForbiddenException;
 import pl.pollub.pari.common.exception.NotFoundException;
@@ -16,6 +17,7 @@ import pl.pollub.pari.spot.domain.ParkingSpot;
 import pl.pollub.pari.support.ServiceTestBase;
 import pl.pollub.pari.support.domain.EvacuationStatus;
 import pl.pollub.pari.support.domain.ReportStatus;
+import pl.pollub.pari.support.domain.SanctionType;
 import pl.pollub.pari.support.domain.TicketPriority;
 import pl.pollub.pari.support.domain.TicketSource;
 import pl.pollub.pari.support.domain.TicketType;
@@ -32,7 +34,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /** Tickets and support commands on the real schema; the clock is fixed at NOW. */
-@Import({SupportTicketService.class, SupportCommandService.class})
+@Import({SupportTicketService.class, SupportCommandService.class, ModerationService.class})
 @RecordApplicationEvents
 class SupportTicketServiceTest extends ServiceTestBase {
 
@@ -40,6 +42,8 @@ class SupportTicketServiceTest extends ServiceTestBase {
     SupportTicketService tickets;
     @Autowired
     SupportCommandService commands;
+    @Autowired
+    ModerationService moderation;
     @Autowired
     ApplicationEvents events;
 
@@ -314,6 +318,103 @@ class SupportTicketServiceTest extends ServiceTestBase {
         assertThatThrownBy(() -> tickets.auditTrail(owner.getId(), view.id(), 0, 10)).isInstanceOf(ForbiddenException.class);
         assertThatThrownBy(() -> tickets.auditTrail(support.getId(), java.util.UUID.randomUUID(), 0, 10))
                 .isInstanceOf(NotFoundException.class);
+    }
+
+    @Test
+    void aSanctionTargetMustBeAParticipantOfTheTicketsReservation() {
+        Reservation r = running(NOW.minus(Duration.ofHours(3)), NOW.minus(Duration.ofMinutes(20)));
+        TicketView view = tickets.create(owner.getId(), r.getId(), TicketType.VEHICLE_NOT_LEFT, "Still there");
+        User stranger = persistUser(Role.DRIVER);
+        em.flush();
+
+        assertThatThrownBy(() -> commands.sanction(support.getId(), view.id(), stranger.getId(), SanctionType.WARNING, "x"))
+                .isInstanceOfSatisfying(BadRequestException.class, e -> assertThat(e.getErrorCode()).isEqualTo("SANCTION_TARGET_NOT_PARTICIPANT"));
+        commands.sanction(support.getId(), view.id(), driver.getId(), SanctionType.WARNING, "Overstayed");
+        commands.sanction(support.getId(), view.id(), owner.getId(), SanctionType.WARNING, "Reported falsely");
+
+        assertThat(moderation.moderation(support.getId(), stranger.getId()).history()).isEmpty();
+        assertThat(moderation.moderation(support.getId(), driver.getId()).history()).singleElement()
+                .satisfies(h -> {
+                    assertThat(h.reason()).isEqualTo("Overstayed");
+                    assertThat(h.issuedById()).isEqualTo(support.getId());
+                    assertThat(h.ticketId()).isEqualTo(view.id());
+                });
+    }
+
+    @Test
+    void reachingTheWarningLimitBlocksTheAccountAndLeavesABlockEntry() {
+        Reservation r = running(NOW.minus(Duration.ofHours(3)), NOW.minus(Duration.ofMinutes(20)));
+        TicketView view = tickets.create(owner.getId(), r.getId(), TicketType.VEHICLE_NOT_LEFT, "Still there");
+
+        commands.sanction(support.getId(), view.id(), driver.getId(), SanctionType.WARNING, "First");
+        commands.sanction(support.getId(), view.id(), driver.getId(), SanctionType.WARNING, "Second");
+        assertThat(moderation.moderation(support.getId(), driver.getId()).blocked()).isFalse();
+        commands.sanction(support.getId(), view.id(), driver.getId(), SanctionType.WARNING, "Third");
+
+        ModerationService.ModerationView view3 = moderation.moderation(support.getId(), driver.getId());
+        assertThat(view3.blocked()).isTrue();
+        assertThat(view3.warningCount()).isEqualTo(3);
+        assertThat(view3.warningLimit()).isEqualTo(3);
+        assertThat(view3.history()).extracting(ModerationService.SanctionView::type)
+                .containsExactlyInAnyOrder(SanctionType.WARNING, SanctionType.WARNING, SanctionType.WARNING, SanctionType.BLOCK);
+        assertThat(view3.history()).filteredOn(h -> h.type() == SanctionType.BLOCK).singleElement()
+                .satisfies(h -> assertThat(h.reason()).isEqualTo("Warning limit reached"));
+    }
+
+    @Test
+    void anUnblockKeepsTheHistoryResetsTheWarningCountAndAWarningDoesNotBlockAgainAtOnce() {
+        Reservation r = running(NOW.minus(Duration.ofHours(3)), NOW.minus(Duration.ofMinutes(20)));
+        TicketView view = tickets.create(owner.getId(), r.getId(), TicketType.VEHICLE_NOT_LEFT, "Still there");
+        commands.sanction(support.getId(), view.id(), driver.getId(), SanctionType.BLOCK, "Refused to leave");
+
+        ModerationService.ModerationView after = moderation.unblock(support.getId(), driver.getId(), "Apologised");
+
+        assertThat(after.blocked()).isFalse();
+        assertThat(after.warningCount()).isZero();
+        assertThat(after.history()).extracting(ModerationService.SanctionView::type)
+                .containsExactlyInAnyOrder(SanctionType.BLOCK, SanctionType.UNBLOCK);
+        assertThat(after.history()).filteredOn(h -> h.type() == SanctionType.UNBLOCK).singleElement()
+                .satisfies(h -> assertThat(h.ticketId()).isNull());
+
+        commands.sanction(support.getId(), view.id(), driver.getId(), SanctionType.WARNING, "New warning");
+        assertThat(moderation.moderation(support.getId(), driver.getId()).blocked()).isFalse();
+        assertThat(moderation.moderation(support.getId(), driver.getId()).warningCount()).isEqualTo(1);
+    }
+
+    @Test
+    void blockingABlockedAccountOrUnblockingAnActiveOneIsRefused() {
+        Reservation r = running(NOW.minus(Duration.ofHours(3)), NOW.minus(Duration.ofMinutes(20)));
+        TicketView view = tickets.create(owner.getId(), r.getId(), TicketType.VEHICLE_NOT_LEFT, "Still there");
+
+        assertThatThrownBy(() -> moderation.unblock(support.getId(), driver.getId(), "Not blocked"))
+                .isInstanceOfSatisfying(ConflictException.class, e -> assertThat(e.getErrorCode()).isEqualTo("NOT_BLOCKED"));
+        commands.sanction(support.getId(), view.id(), driver.getId(), SanctionType.BLOCK, "Refused to leave");
+        assertThatThrownBy(() -> commands.sanction(support.getId(), view.id(), driver.getId(), SanctionType.BLOCK, "Again"))
+                .isInstanceOfSatisfying(ConflictException.class, e -> assertThat(e.getErrorCode()).isEqualTo("ALREADY_BLOCKED"));
+    }
+
+    @Test
+    void theBlockedUsersListShowsTheReasonAndDisappearsAfterAnUnblock() {
+        Reservation r = running(NOW.minus(Duration.ofHours(3)), NOW.minus(Duration.ofMinutes(20)));
+        TicketView view = tickets.create(owner.getId(), r.getId(), TicketType.VEHICLE_NOT_LEFT, "Still there");
+        commands.sanction(support.getId(), view.id(), driver.getId(), SanctionType.BLOCK, "Refused to leave");
+
+        assertThat(moderation.blockedUsers(support.getId(), 0, 20)).singleElement().satisfies(b -> {
+            assertThat(b.userId()).isEqualTo(driver.getId());
+            assertThat(b.reason()).isEqualTo("Refused to leave");
+            assertThat(b.blockedSince()).isNotNull();
+        });
+        moderation.unblock(support.getId(), driver.getId(), "Resolved");
+        assertThat(moderation.blockedUsers(support.getId(), 0, 20)).isEmpty();
+    }
+
+    @Test
+    void moderationLookupAndUnblockAreForSupportOnlyAndUnblockNeedsAReason() {
+        assertThatThrownBy(() -> moderation.moderation(driver.getId(), owner.getId())).isInstanceOf(ForbiddenException.class);
+        assertThatThrownBy(() -> moderation.blockedUsers(owner.getId(), 0, 10)).isInstanceOf(ForbiddenException.class);
+        assertThatThrownBy(() -> moderation.unblock(driver.getId(), owner.getId(), "x")).isInstanceOf(ForbiddenException.class);
+        assertThatThrownBy(() -> moderation.unblock(support.getId(), owner.getId(), " ")).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> moderation.moderation(support.getId(), java.util.UUID.randomUUID())).isInstanceOf(NotFoundException.class);
     }
 
     private Reservation running(Instant start, Instant end) {
