@@ -468,6 +468,7 @@ PARI backend API version 0.0.1. Parking space rental portal. Authenticate with a
 | `heightCm` | integer (int32) | no |  |
 | `hourlyPrice` | number | yes | min 0.01 |
 | `accessInstructions` | string | no |  |
+| `ownerGatePin` | string | no | max 32; the owner's gate PIN, stored encrypted; blank or left out = none (PARI-85) |
 | `autoAccept` | boolean | no |  |
 | `amenities` | array of string | no |  |
 | `photoKeys` | array of string | no |  |
@@ -609,6 +610,8 @@ PARI backend API version 0.0.1. Parking space rental portal. Authenticate with a
 | `currency` | string | no |  |
 | `pinCode` | string | no |  |
 | `qrToken` | string | no |  |
+| `ownerGatePinSnapshot` | string | no | the space's gate PIN when the booking was confirmed; driver and owner only; null for older reservations (PARI-66) |
+| `accessInstructionsSnapshot` | string | no | the space's access instructions when the booking was confirmed; driver and owner only |
 | `cancelReason` | string | no |  |
 | `createdAt` | string (date-time) | no |  |
 | `checkInAt` | string (date-time) | no |  |
@@ -688,7 +691,8 @@ PARI backend API version 0.0.1. Parking space rental portal. Authenticate with a
 | `heightCm` | integer (int32) | no |  |
 | `hourlyPrice` | number | no |  |
 | `currency` | string | no |  |
-| `accessInstructions` | string | no |  |
+| `accessInstructions` | string | no | owner only |
+| `ownerGatePin` | string | no | owner only; null for everyone else |
 | `autoAccept` | boolean | no |  |
 | `realtimeStatusEnabled` | boolean | no |  |
 | `occupancy` | `FREE` \| `OCCUPIED` | no |  |
@@ -751,6 +755,7 @@ PARI backend API version 0.0.1. Parking space rental portal. Authenticate with a
 | `widthCm` | integer (int32) | no |  |
 | `heightCm` | integer (int32) | no |  |
 | `accessInstructions` | string | no |  |
+| `ownerGatePin` | string | no | max 32; the owner's gate PIN, stored encrypted; blank or left out = none (PARI-85) |
 | `amenities` | array of string | no | left out keeps the current amenities |
 | `autoAccept` | boolean | no | `false` = every booking waits for the owner (`PENDING_APPROVAL`); left out keeps the current mode |
 
@@ -829,6 +834,18 @@ The user id always comes from the token, never from the request body. Rules are 
 | Vehicles | own vehicles only; unique plate per user; not deletable while used | `409 VEHICLE_ALREADY_EXISTS`, `VEHICLE_IN_ACTIVE_RESERVATION`, `VEHICLE_HAS_RESERVATION_HISTORY` |
 | Block a period in the calendar | the owner; refused while a reservation holds a slot in it | `409 PERIOD_HAS_RESERVATIONS` |
 | Archive a space | the owner; refused while a reservation holds a slot | `409 SPOT_HAS_ACTIVE_RESERVATIONS` |
+
+### Gate PIN and access details
+
+Three different things are easy to mix up:
+
+| What | Where | Meaning |
+|---|---|---|
+| `ownerGatePin` | on the space (`POST`/`PUT /api/spots`, `GET /api/spots/{id}`, `GET /api/spots/mine`) | The code of the owner's gate or barrier. Stored encrypted. Returned to the owner of the space only; never in search results, never to another user. A `PUT` replaces it as a whole: a missing, null or blank value clears it. |
+| `ownerGatePinSnapshot`, `accessInstructionsSnapshot` | on the reservation (`ReservationView`) | What the owner had configured at the moment the reservation was confirmed (paid, or accepted by the owner). Fixed from then on: editing or clearing the space later changes future reservations only. The driver and the owner of the reservation see them, also after check-out or cancellation. They are null for reservations confirmed before this existed and for spaces that had no PIN. |
+| `pinCode`, `qrToken` | on the reservation | The generated check-in credential. Only the driver sees it, only while the reservation is confirmed or running. Check-in is validated against these two, never against the gate PIN. |
+
+The legacy `PS_META` marker that the frontend wrote into the space description is not read by the backend. The description is stored and returned as it is; the frontend should move the PIN to `ownerGatePin` and stop writing the marker.
 
 ### Support tickets and moderation
 

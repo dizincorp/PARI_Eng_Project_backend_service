@@ -54,7 +54,19 @@ public class SpotService {
             Set<String> amenityCodes,
             List<String> photoKeys,
             boolean ownershipDeclared,
-            boolean requestVerification) {
+            boolean requestVerification,
+            String ownerGatePin) {
+
+        /** A command without a gate PIN. */
+        public CreateSpotCommand(String name, String description, String street, String city, String postalCode, String country,
+                                 double lat, double lng, int lengthCm, int widthCm, Integer heightCm, Money hourlyPrice,
+                                 Money dailyPrice, Money monthlyPrice, String accessInstructions, boolean autoAccept,
+                                 Set<String> amenityCodes, List<String> photoKeys, boolean ownershipDeclared,
+                                 boolean requestVerification) {
+            this(name, description, street, city, postalCode, country, lat, lng, lengthCm, widthCm, heightCm, hourlyPrice,
+                    dailyPrice, monthlyPrice, accessInstructions, autoAccept, amenityCodes, photoKeys, ownershipDeclared,
+                    requestVerification, null);
+        }
 
         /** A space with an hourly price only: daily and monthly bookings are priced from it. */
         public CreateSpotCommand(String name, String description, String street, String city, String postalCode, String country,
@@ -62,14 +74,16 @@ public class SpotService {
                                  String accessInstructions, boolean autoAccept, Set<String> amenityCodes, List<String> photoKeys,
                                  boolean ownershipDeclared, boolean requestVerification) {
             this(name, description, street, city, postalCode, country, lat, lng, lengthCm, widthCm, heightCm, hourlyPrice,
-                    null, null, accessInstructions, autoAccept, amenityCodes, photoKeys, ownershipDeclared, requestVerification);
+                    null, null, accessInstructions, autoAccept, amenityCodes, photoKeys, ownershipDeclared, requestVerification,
+                    null);
         }
     }
 
     /**
      * The fields an owner may change on an existing space. {@code amenityCodes == null} keeps the current amenities and
      * {@code autoAccept == null} keeps the current booking mode. The prices are replaced as a whole: a {@code null} daily
-     * or monthly price removes the price that was set.
+     * or monthly price removes the price that was set. The gate PIN is replaced as a whole too: a null or blank
+     * {@code ownerGatePin} clears it.
      */
     public record UpdateSpotCommand(
             String name,
@@ -82,7 +96,16 @@ public class SpotService {
             Integer heightCm,
             String accessInstructions,
             Set<String> amenityCodes,
-            Boolean autoAccept) {
+            Boolean autoAccept,
+            String ownerGatePin) {
+
+        /** An update with a gate PIN of {@code null}, which clears it. */
+        public UpdateSpotCommand(String name, String description, Money hourlyPrice, Money dailyPrice, Money monthlyPrice,
+                                 int lengthCm, int widthCm, Integer heightCm, String accessInstructions,
+                                 Set<String> amenityCodes, Boolean autoAccept) {
+            this(name, description, hourlyPrice, dailyPrice, monthlyPrice, lengthCm, widthCm, heightCm, accessInstructions,
+                    amenityCodes, autoAccept, null);
+        }
 
         /** An update that keeps the amenities and the auto-accept setting as they are. */
         public UpdateSpotCommand(String name, String description, Money hourlyPrice, Money dailyPrice, Money monthlyPrice,
@@ -147,6 +170,7 @@ public class SpotService {
         spot.setDailyPrice(cmd.dailyPrice());
         spot.setMonthlyPrice(cmd.monthlyPrice());
         spot.setAccessInstructions(cmd.accessInstructions());
+        spot.changeOwnerGatePin(cmd.ownerGatePin());
         spot.setAutoAccept(cmd.autoAccept());
         spot.getAmenities().addAll(resolveAmenities(cmd.amenityCodes()));
         if (cmd.photoKeys() != null) {
@@ -199,6 +223,7 @@ public class SpotService {
         spot.setMonthlyPrice(cmd.monthlyPrice());
         spot.setDimensions(new Dimensions(cmd.lengthCm(), cmd.widthCm(), cmd.heightCm()));
         spot.setAccessInstructions(cmd.accessInstructions());
+        spot.changeOwnerGatePin(cmd.ownerGatePin());
         if (cmd.autoAccept() != null) {
             spot.setAutoAccept(cmd.autoAccept());
         }

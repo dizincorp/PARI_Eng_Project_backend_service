@@ -2,6 +2,7 @@ package pl.pollub.pari.spot.domain;
 
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Embedded;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -19,6 +20,7 @@ import lombok.Setter;
 import pl.pollub.pari.common.domain.BaseEntity;
 import pl.pollub.pari.common.domain.IllegalStateTransitionException;
 import pl.pollub.pari.common.domain.Money;
+import pl.pollub.pari.common.security.EncryptedStringConverter;
 import pl.pollub.pari.user.domain.User;
 
 import java.math.BigDecimal;
@@ -74,6 +76,14 @@ public class ParkingSpot extends BaseEntity {
     @Setter
     @Column(columnDefinition = "text")
     private String accessInstructions;
+
+    /**
+     * The gate PIN the owner configured for this space (PARI-85), encrypted at rest. It is shown to the owner only and is
+     * copied into the reservation when the booking is confirmed. Not the reservation's own check-in {@code pinCode}.
+     */
+    @Convert(converter = EncryptedStringConverter.class)
+    @Column(name = "owner_gate_pin", columnDefinition = "text")
+    private String ownerGatePin;
 
     @Setter
     private boolean autoAccept = true;
@@ -205,5 +215,10 @@ public class ParkingSpot extends BaseEntity {
         for (int i = 0; i < photos.size(); i++) {
             photos.get(i).setPosition(i);
         }
+    }
+
+    /** Sets, changes or clears the owner's gate PIN; a null or blank value removes it. */
+    public void changeOwnerGatePin(String pin) {
+        this.ownerGatePin = pin == null || pin.isBlank() ? null : pin.trim();
     }
 }

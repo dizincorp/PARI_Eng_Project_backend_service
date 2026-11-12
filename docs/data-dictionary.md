@@ -208,6 +208,7 @@ A parking space offered by an owner: address, coordinates (PostGIS location is g
 | `hourly_price_minor` | bigint | no |  |  |
 | `currency` | varchar(3) | no | `'PLN'::character varying` |  |
 | `access_instructions` | text | yes |  |  |
+| `owner_gate_pin` | text | yes |  | The owner's gate PIN, encrypted at rest (PARI-85) |
 | `auto_accept` | boolean | no | `true` |  |
 | `realtime_status_enabled` | boolean | no | `false` |  |
 | `occupancy` | varchar(20) | no | `'FREE'::character varying` |  |
@@ -433,6 +434,8 @@ A booking of a space for a time range, with the price snapshot, access codes and
 | `commission_minor` | bigint | no |  |  |
 | `pin_code` | varchar(10) | yes |  |  |
 | `qr_token` | varchar(100) | yes |  |  |
+| `owner_gate_pin_snapshot` | text | yes |  | Gate PIN of the space when the booking was confirmed, encrypted; never changed afterwards (PARI-66) |
+| `access_instructions_snapshot` | text | yes |  | Access instructions of the space when the booking was confirmed |
 | `check_in_at` | timestamptz | yes |  |  |
 | `check_out_at` | timestamptz | yes |  |  |
 | `overstay_penalty_minor` | bigint | yes |  |  |
