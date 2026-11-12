@@ -118,6 +118,16 @@ public class Report extends BaseEntity {
         this.status = ReportStatus.IN_PROGRESS;
     }
 
+    /** Releases the ticket back to the shared queue; it stays open and keeps its messages and resolution (PARI-83). */
+    public void unassign() {
+        requireOpen("be released");
+        if (assignedTo == null) {
+            throw new IllegalStateTransitionException("The ticket is not assigned");
+        }
+        this.assignedTo = null;
+        this.status = ReportStatus.OPEN;
+    }
+
     /** Support starts moving the car away. {@code fee} is what the driver is charged. */
     public void requestEvacuation(String destination, Money fee) {
         requireOpen("start an evacuation");
@@ -145,6 +155,13 @@ public class Report extends BaseEntity {
             throw new IllegalStateTransitionException("This ticket has no evacuation");
         }
         this.evacuationFee = fee;
+    }
+
+    /** True for the driver and the owner of the ticket's reservation and for the reporter. */
+    public boolean involves(java.util.UUID userId) {
+        return (reporter != null && reporter.getId().equals(userId))
+                || reservation.getDriver().getId().equals(userId)
+                || reservation.getSpot().getOwner().getId().equals(userId);
     }
 
     public boolean isOpen() {

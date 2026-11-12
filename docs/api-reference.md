@@ -830,6 +830,29 @@ The user id always comes from the token, never from the request body. Rules are 
 | Block a period in the calendar | the owner; refused while a reservation holds a slot in it | `409 PERIOD_HAS_RESERVATIONS` |
 | Archive a space | the owner; refused while a reservation holds a slot | `409 SPOT_HAS_ACTIVE_RESERVATIONS` |
 
+### Support tickets and moderation
+
+Drivers and owners use `/api/tickets` (open a ticket for a reservation, list, read, write a message). The support page uses `/api/support/...`; every endpoint there needs the `SUPPORT` or `ADMIN` role (403 otherwise, 401 without a token).
+
+| Endpoint | What it does |
+|---|---|
+| `GET /api/support/tickets` | The shared queue: high priority first, then the oldest. Filters: `status`, `type`, `priority`, `unassigned`, `page`, `size`. |
+| `GET /api/support/tickets/staff` | Active support agents and administrators who can be assigned a ticket (id, display name, roles). |
+| `GET /api/support/tickets/{id}/reservation` | The ticket's reservation for the support page: spot and address, interval with time zone, vehicle plate, driver and owner (account ids, names, e-mail, phone), check-in and check-out, amounts, penalty, payments and refund state. Never the PIN or the QR token. 404 for an unknown ticket. |
+| `GET /api/support/tickets/{id}/audit` | The audit timeline of the ticket, oldest first, paginated (`page`, `size`, default 50, at most 200). Entries: `action`, `actorId`, `actorName`, `createdAt`, `reason`, `outcome`, `metadata`. |
+| `POST /api/support/tickets/{id}/claim` | Takes the ticket from the queue (409 `TICKET_ALREADY_CLAIMED` when another agent has it). |
+| `POST /api/support/tickets/{id}/commands/...` | `force-check-out`, `settle-penalty`, `cancel-with-refund`, `correct-no-show`, `sanction`, `reassign`, `release` (back to the unassigned queue, the ticket stays open), `close`. Every command needs a `reason`; a command on a closed ticket answers 409 `TICKET_CLOSED`. |
+| `POST /api/support/tickets/{id}/evacuation` (and `/status`, `/fee`) | Records an evacuation: destination, status `REQUESTED` to `IN_PROGRESS` to `DONE`, fee. |
+| `GET /api/support/users/{userId}/moderation` | Whether the account is blocked, the warnings that count now, the warning limit and the whole sanction history (newest first). |
+| `GET /api/support/users/blocked` | Accounts that are blocked now, with the block reason and the time of the block. |
+| `POST /api/support/users/{userId}/unblock` | Unblocks an account without a ticket (`reason` required, 409 `NOT_BLOCKED` when it is not blocked). The earlier sanctions stay in the history. |
+
+**Audit policy.** Every successful support command writes one append-only entry (actor, reason, time, `outcome` `SUCCEEDED`, and safe metadata such as the previous assignee or the ticket state after the command). A command that fails rolls back and leaves no entry, so a failed command never looks like a state change. The audit entries are separate from the ticket messages and internal notes.
+
+**Sanctions.** A sanction issued from a ticket must target the driver, the owner or the reporter of the ticket's reservation (400 `SANCTION_TARGET_NOT_PARTICIPANT` otherwise). Escalation: warnings count until the account is unblocked; when they reach the `warning_limit` platform setting (3 in the migration, a PLACEHOLDER the team may change) the account is blocked automatically and a `BLOCK` entry "Warning limit reached" is written. An unblock is a new `UNBLOCK` entry, earlier sanctions are never deleted, and the count starts again from zero. Blocking a blocked account (`ALREADY_BLOCKED`) or unblocking an active one (`NOT_BLOCKED`) answers 409.
+
+Two requests that change the same row at once: the second answers 409 `CONCURRENT_UPDATE`; reload and try again.
+
 ### Errors
 
 Every error has the same body, also for the security filters:
@@ -871,4 +894,4 @@ A booking whose payment is declined answers `402`, and the reservation is stored
 
 ### Not implemented yet
 
-Refresh tokens and logout on the server, e-mail and phone verification, password reset, support reports and sanctions, the inspection workflow for verification requests, extending a reservation (`/extend`), the PDF confirmation, real Stripe payments, rate limiting of login. The tables for some of these already exist (see [data-dictionary.md](data-dictionary.md)).
+Refresh tokens and logout on the server, e-mail and phone verification, password reset, the inspection workflow for verification requests, extending a reservation (`/extend`), the PDF confirmation, real Stripe payments, rate limiting of login. The tables for some of these already exist (see [data-dictionary.md](data-dictionary.md)).

@@ -31,19 +31,19 @@ public class SupportCommandService {
     private final SupportTicketService ticketService;
     private final ReservationService reservationService;
     private final UserRepository users;
-    private final SanctionRepository sanctions;
+    private final ModerationService moderation;
     private final AuditTrail audit;
     private final PlatformSettings settings;
     private final Clock clock;
     private final ApplicationEventPublisher events;
 
     public SupportCommandService(SupportTicketService ticketService, ReservationService reservationService, UserRepository users,
-                                 SanctionRepository sanctions, AuditTrail audit, PlatformSettings settings, Clock clock,
+                                 ModerationService moderation, AuditTrail audit, PlatformSettings settings, Clock clock,
                                  ApplicationEventPublisher events) {
         this.ticketService = ticketService;
         this.reservationService = reservationService;
         this.users = users;
-        this.sanctions = sanctions;
+        this.moderation = moderation;
         this.audit = audit;
         this.settings = settings;
         this.clock = clock;
@@ -83,33 +83,43 @@ public class SupportCommandService {
     }
 
     /**
-     * Warns the user (type WARNING) or blocks the account (BLOCK). Reaching {@code warning_limit} warnings blocks the
-     * account automatically (F22).
+     * Warns (WARNING), blocks (BLOCK) or unblocks (UNBLOCK) a participant of the ticket's reservation: its driver, its owner
+     * or the reporter. Any other user id is rejected with 400 SANCTION_TARGET_NOT_PARTICIPANT. The escalation rule is
+     * described on {@link ModerationService}.
      */
     @Transactional
     public TicketView sanction(UUID supportId, UUID ticketId, UUID userId, SanctionType type, String reason) {
         Report ticket = begin(supportId, ticketId, reason);
-        User support = users.getReferenceById(supportId);
         User target = users.findById(userId).orElseThrow(() -> new NotFoundException("User not found"));
-        sanctions.save(new Sanction(target, ticket, support, type, reason));
-        switch (type) {
-            case BLOCK -> target.block();
-            case UNBLOCK -> target.unblock();
-            case WARNING -> {
-                if (sanctions.countByUserIdAndType(userId, SanctionType.WARNING) >= settings.integer("warning_limit")) {
-                    target.block();
-                }
-            }
+        if (!ticket.involves(target.getId())) {
+            throw new pl.pollub.pari.common.exception.BadRequestException("SANCTION_TARGET_NOT_PARTICIPANT",
+                    "The user is not a participant of this ticket's reservation");
         }
-        return done(supportId, ticket, "SANCTION_" + type.name(), reason);
+        boolean autoBlocked = moderation.apply(supportId, target, ticket, type, reason);
+        java.util.Map<String, Object> extra = new java.util.HashMap<>();
+        extra.put("targetUserId", userId.toString());
+        extra.put("sanctionType", type.name());
+        extra.put("targetBlocked", target.isBlocked());
+        extra.put("autoBlocked", autoBlocked);
+        return done(supportId, ticket, "SANCTION_" + type.name(), reason, extra);
     }
 
     /** Hands the ticket to another support employee. */
     @Transactional
     public TicketView reassign(UUID supportId, UUID ticketId, UUID newAssigneeId, String reason) {
         Report ticket = begin(supportId, ticketId, reason);
+        Map<String, Object> extra = previousAssignee(ticket);
         ticket.reassign(ticketService.requireSupport(newAssigneeId));
-        return done(supportId, ticket, "REASSIGN", reason);
+        return done(supportId, ticket, "REASSIGN", reason, extra);
+    }
+
+    /** Releases a claimed ticket to the unassigned queue without closing it or changing its resolution (PARI-83). */
+    @Transactional
+    public TicketView release(UUID supportId, UUID ticketId, String reason) {
+        Report ticket = begin(supportId, ticketId, reason);
+        Map<String, Object> extra = previousAssignee(ticket);
+        ticket.unassign();
+        return done(supportId, ticket, "RELEASE", reason, extra);
     }
 
     /** Resolves and closes the ticket. The reason becomes the resolution shown to the participants. */
@@ -158,6 +168,13 @@ public class SupportCommandService {
         return done(supportId, ticket, "EVACUATION_FEE_ADJUSTED", reason);
     }
 
+    /** Audit metadata: who had the ticket before an assignment change (null when nobody). */
+    private static Map<String, Object> previousAssignee(Report ticket) {
+        Map<String, Object> extra = new java.util.HashMap<>();
+        extra.put("previousAssigneeId", ticket.getAssignedTo() == null ? null : ticket.getAssignedTo().getId().toString());
+        return extra;
+    }
+
     private Report begin(UUID supportId, UUID ticketId, String reason) {
         ticketService.requireSupport(supportId);
         if (reason == null || reason.isBlank()) {
@@ -171,8 +188,25 @@ public class SupportCommandService {
     }
 
     private TicketView done(UUID supportId, Report ticket, String command, String reason) {
-        audit.record(supportId, "Ticket", ticket.getId(), "SUPPORT_" + command,
-                Map.of("reason", reason, "code", ticket.getReservation().getCode()));
+        return done(supportId, ticket, command, reason, Map.of());
+    }
+
+    /**
+     * Writes the audit entry of a command that succeeded. A command that fails rolls back and leaves no entry (documented
+     * audit policy). {@code extra} carries safe structured metadata such as the previous assignee; the state after the
+     * command is always recorded.
+     */
+    private TicketView done(UUID supportId, Report ticket, String command, String reason, Map<String, Object> extra) {
+        Map<String, Object> data = new java.util.LinkedHashMap<>(extra);
+        data.put("reason", reason);
+        data.put("code", ticket.getReservation().getCode());
+        data.put("outcome", "SUCCEEDED");
+        data.put("ticketStatus", ticket.getStatus().name());
+        data.put("assignedToId", ticket.getAssignedTo() == null ? null : ticket.getAssignedTo().getId().toString());
+        if (ticket.getEvacuationStatus() != null) {
+            data.put("evacuationStatus", ticket.getEvacuationStatus().name());
+        }
+        audit.record(supportId, "Ticket", ticket.getId(), "SUPPORT_" + command, data);
         return TicketView.of(ticket, true);
     }
 }

@@ -36,7 +36,7 @@
 | [reports](#reports) | Complaints about a reservation. Table and entity exist, no endpoint uses them yet. |
 | [reservations](#reservations) | A booking of a space for a time range, with the price snapshot, access codes and the session times. The exclusion constraint reservations_no_overlap forbids two slot-holding reservations overlapping. |
 | [reviews](#reviews) | A driver's rating of a space after a COMPLETED reservation; one per reservation and author. |
-| [sanctions](#sanctions) | Warnings and blocks issued to a user. Not used by an endpoint yet. |
+| [sanctions](#sanctions) | Warnings, blocks and unblocks issued to a user, from a ticket or by an unblock without a ticket. History is never deleted (support API). |
 | [spot_amenities](#spot_amenities) | Many-to-many link between spaces and amenities. |
 | [spot_photos](#spot_photos) | Photos of a space; storage_key points to a file in the media directory. |
 | [user_roles](#user_roles) | Roles of a user: DRIVER, OWNER, VERIFIER, SUPPORT, ADMIN. |
