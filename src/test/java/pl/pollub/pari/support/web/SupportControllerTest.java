@@ -29,6 +29,8 @@ import java.util.UUID;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -110,6 +112,49 @@ class SupportControllerTest {
         mvc.perform(post("/api/support/tickets/{id}/claim", TICKET).header("X-User-Id", SUPPORT))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.errorCode").value("CONCURRENT_UPDATE"));
+    }
+
+    @Test
+    void assessingAPenaltyNeedsAPositiveAmountAReasonAndAnOperationId() throws Exception {
+        String url = "/api/support/tickets/" + TICKET + "/penalties";
+        for (String body : List.of(
+                "{\"amountMinor\":0,\"reason\":\"r\",\"operationId\":\"op\"}",
+                "{\"amountMinor\":-5,\"reason\":\"r\",\"operationId\":\"op\"}",
+                "{\"amountMinor\":100,\"reason\":\" \",\"operationId\":\"op\"}",
+                "{\"amountMinor\":100,\"reason\":\"r\"}")) {
+            mvc.perform(post(url).header("X-User-Id", SUPPORT).contentType(MediaType.APPLICATION_JSON).content(body))
+                    .andExpect(status().isBadRequest());
+        }
+        verifyNoInteractions(commands);
+    }
+
+    @Test
+    void thePenaltyAndFeeCommandsPassTheCallerAndTheOperationIdAndAnswer409WhenTheStateForbidsThem() throws Exception {
+        UUID penalty = UUID.randomUUID();
+        mvc.perform(post("/api/support/tickets/{id}/penalties", TICKET).header("X-User-Id", SUPPORT)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"amountMinor\":2500,\"reason\":\"Blocked the gate\",\"operationId\":\"op-1\"}"))
+                .andExpect(status().isOk());
+        verify(commands).assessPenalty(SUPPORT, TICKET, 2500, null, "Blocked the gate", "op-1");
+
+        mvc.perform(post("/api/support/tickets/{id}/evacuation/fees", TICKET).header("X-User-Id", SUPPORT)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"amountMinor\":15000,\"reason\":\"Tow\",\"operationId\":\"fee-1\"}"))
+                .andExpect(status().isOk());
+        verify(commands).addEvacuationFee(SUPPORT, TICKET, 15000, "Tow", "fee-1");
+
+        when(commands.waiveAssessedPenalty(any(), any(), any(), any()))
+                .thenThrow(new pl.pollub.pari.common.domain.IllegalStateTransitionException("Penalty", "CHARGED", "be waived"));
+        mvc.perform(post("/api/support/tickets/{id}/penalties/{p}/waive", TICKET, penalty).header("X-User-Id", SUPPORT)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\"Too late\"}"))
+                .andExpect(status().isConflict());
+
+        when(commands.refundEvacuationFee(any(), any(), any(), any()))
+                .thenThrow(new ConflictException("EVACUATION_FEE_ALREADY_REFUNDED", "Already refunded"));
+        mvc.perform(post("/api/support/tickets/{id}/evacuation/fees/{f}/refund", TICKET, penalty).header("X-User-Id", SUPPORT)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\"Again\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.errorCode").value("EVACUATION_FEE_ALREADY_REFUNDED"));
     }
 
     @Test

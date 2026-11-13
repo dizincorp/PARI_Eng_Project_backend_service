@@ -76,6 +76,40 @@ public class PaymentService {
         return payments.save(payment);
     }
 
+    /**
+     * Charges {@code amount} of the given type (PARI-87, PARI-88). The idempotency key must be unique per business
+     * operation, because the provider reference is derived from it and is unique in the database. Like
+     * {@link #chargePenalty}, a refusal is recorded as a FAILED payment and never thrown.
+     */
+    @Transactional
+    public Payment chargeItem(Reservation reservation, PaymentType type, Money amount, String paymentMethodToken, String idempotencyKey) {
+        PaymentGateway.Result result = paymentMethodToken == null
+                ? PaymentGateway.Result.failure("No payment method on file")
+                : gateway.charge(amount, paymentMethodToken, idempotencyKey);
+        Payment payment = new Payment(reservation, type, amount, result.providerRef());
+        if (result.succeeded()) {
+            payment.markSucceeded();
+        } else {
+            payment.markFailed();
+        }
+        return payments.save(payment);
+    }
+
+    /** Returns the whole amount of one successful payment to the driver. Throws {@link PaymentFailedException} when the provider refuses. */
+    @Transactional
+    public Payment refundPayment(Payment original) {
+        if (original.getStatus() != PaymentStatus.SUCCEEDED) {
+            throw new PaymentFailedException("Only a successful payment can be refunded");
+        }
+        PaymentGateway.Result result = gateway.refund(original.getProviderRef(), original.getAmount());
+        if (!result.succeeded()) {
+            throw new PaymentFailedException("Refund failed: " + result.failureReason());
+        }
+        Payment refund = new Payment(original.getReservation(), PaymentType.REFUND, original.getAmount(), result.providerRef());
+        refund.markSucceeded();
+        return payments.save(refund);
+    }
+
     /** Schedules the owner's payout: spot cost minus commission, released {@code payout_delay_hours} after the end (F17, F18). */
     @Transactional
     public Payout schedulePayout(Reservation reservation) {

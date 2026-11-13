@@ -34,7 +34,11 @@ public record SupportReservationView(
         Party owner,
         Lifecycle lifecycle,
         List<PaymentLine> payments,
-        String refundState) {
+        String refundState,
+        List<SupportCharges.PenaltyItem> penalties,
+        BigDecimal penaltyTotal,
+        List<SupportCharges.FeeItem> evacuationFees,
+        BigDecimal evacuationFeeTotal) {
 
     public record Spot(UUID id, String name, String street, String city, String postalCode, String country) {
     }
@@ -82,6 +86,7 @@ public record SupportReservationView(
                 Party.of(r.getSpot().getOwner()), lifecycle,
                 payments.stream().map(p -> new PaymentLine(p.getType(), p.getStatus(), p.getAmount().toDecimal(),
                         p.getAmount().currency(), p.getCreatedAt())).toList(),
-                refundState(payments));
+                refundState(payments), SupportCharges.penalties(r), SupportCharges.penaltyTotal(r),
+                SupportCharges.fees(r), SupportCharges.evacuationFeeTotal(r));
     }
 }

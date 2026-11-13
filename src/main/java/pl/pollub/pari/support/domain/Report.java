@@ -154,6 +154,10 @@ public class Report extends BaseEntity {
         if (evacuationStatus == null) {
             throw new IllegalStateTransitionException("This ticket has no evacuation");
         }
+        if (evacuationStatus == EvacuationStatus.DONE) {
+            throw new IllegalStateTransitionException(
+                    "The evacuation is done and its fee was charged; refund that fee and add a new one instead of changing it");
+        }
         this.evacuationFee = fee;
     }
 

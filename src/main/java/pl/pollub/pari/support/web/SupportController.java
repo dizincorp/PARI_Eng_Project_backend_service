@@ -54,6 +54,16 @@ public class SupportController {
     public record EvacuationFeeRequest(long feeMinor, @NotBlank String reason) {
     }
 
+    /** {@code operationId} identifies the request: a retry with the same id changes nothing. {@code targetUserId} defaults to the driver. */
+    public record AssessPenaltyRequest(@jakarta.validation.constraints.Positive long amountMinor, UUID targetUserId,
+                                       @NotBlank String reason,
+                                       @NotBlank @jakarta.validation.constraints.Size(max = 100) String operationId) {
+    }
+
+    public record EvacuationFeeItemRequest(@jakarta.validation.constraints.Positive long amountMinor, @NotBlank String reason,
+                                           @NotBlank @jakarta.validation.constraints.Size(max = 100) String operationId) {
+    }
+
     public record NoteRequest(@NotBlank String body, boolean internalNote) {
     }
 
@@ -195,5 +205,37 @@ public class SupportController {
     public TicketView adjustEvacuationFee(@CurrentUserId UUID userId, @PathVariable UUID id,
                                           @Valid @RequestBody EvacuationFeeRequest r) {
         return commands.adjustEvacuationFee(userId, id, r.feeMinor(), r.reason());
+    }
+
+    /** Assesses a PENDING penalty on the ticket's reservation (PARI-87). Nothing is charged until it is charged here. */
+    @PostMapping("/tickets/{id}/penalties")
+    public TicketView assessPenalty(@CurrentUserId UUID userId, @PathVariable UUID id, @Valid @RequestBody AssessPenaltyRequest r) {
+        return commands.assessPenalty(userId, id, r.amountMinor(), r.targetUserId(), r.reason(), r.operationId());
+    }
+
+    @PostMapping("/tickets/{id}/penalties/{penaltyId}/charge")
+    public TicketView chargePenalty(@CurrentUserId UUID userId, @PathVariable UUID id, @PathVariable UUID penaltyId,
+                                    @Valid @RequestBody ReasonRequest r) {
+        return commands.chargePenalty(userId, id, penaltyId, r.reason());
+    }
+
+    @PostMapping("/tickets/{id}/penalties/{penaltyId}/waive")
+    public TicketView waivePenalty(@CurrentUserId UUID userId, @PathVariable UUID id, @PathVariable UUID penaltyId,
+                                   @Valid @RequestBody ReasonRequest r) {
+        return commands.waiveAssessedPenalty(userId, id, penaltyId, r.reason());
+    }
+
+    /** Adds and charges one more evacuation fee (PARI-88); the earlier ones are kept. */
+    @PostMapping("/tickets/{id}/evacuation/fees")
+    public TicketView addEvacuationFee(@CurrentUserId UUID userId, @PathVariable UUID id,
+                                       @Valid @RequestBody EvacuationFeeItemRequest r) {
+        return commands.addEvacuationFee(userId, id, r.amountMinor(), r.reason(), r.operationId());
+    }
+
+    /** Reverses one charged evacuation fee in full; it stays in the list next to its REFUND item. */
+    @PostMapping("/tickets/{id}/evacuation/fees/{feeId}/refund")
+    public TicketView refundEvacuationFee(@CurrentUserId UUID userId, @PathVariable UUID id, @PathVariable UUID feeId,
+                                          @Valid @RequestBody ReasonRequest r) {
+        return commands.refundEvacuationFee(userId, id, feeId, r.reason());
     }
 }

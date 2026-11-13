@@ -9,20 +9,27 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToMany;
+import jakarta.persistence.OrderBy;
 import jakarta.persistence.Table;
 import lombok.Getter;
+import org.hibernate.Hibernate;
 import pl.pollub.pari.common.domain.BaseEntity;
 import pl.pollub.pari.common.domain.IllegalStateTransitionException;
 import pl.pollub.pari.common.domain.Money;
 import pl.pollub.pari.common.domain.TimeRange;
 import pl.pollub.pari.common.security.EncryptedStringConverter;
 import pl.pollub.pari.spot.domain.ParkingSpot;
+import pl.pollub.pari.support.domain.EvacuationFee;
+import pl.pollub.pari.support.domain.PenaltyAssessment;
 import pl.pollub.pari.user.domain.User;
 import pl.pollub.pari.user.domain.Vehicle;
 
 import java.security.SecureRandom;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.List;
 
 /**
  * A booking of a parking space for a time range. Prices are copied at booking time, so later changes of the spot price
@@ -134,6 +141,16 @@ public class Reservation extends BaseEntity {
     /** The overstay penalty is set but not charged yet, because a driver ticket is open (PARI-71). */
     private boolean penaltyPending;
 
+    /** Itemized evacuation charges and refunds of this reservation (PARI-88); written only through the support module. */
+    @OneToMany(mappedBy = "reservation")
+    @OrderBy("createdAt ASC")
+    private List<EvacuationFee> evacuationFees = new ArrayList<>();
+
+    /** Penalties support assessed on this reservation (PARI-87); the automatic overstay penalty is not in this list. */
+    @OneToMany(mappedBy = "reservation")
+    @OrderBy("createdAt ASC")
+    private List<PenaltyAssessment> supportPenalties = new ArrayList<>();
+
     /** Bit mask of the session reminders already sent, see {@link #REMINDER_BEFORE_END}. */
     private int remindersSent;
 
@@ -198,6 +215,22 @@ public class Reservation extends BaseEntity {
     public void markAutoCheckedOut() {
         requireStatus("be marked as auto checked out", ReservationStatus.COMPLETED);
         this.autoCheckedOut = true;
+    }
+
+    /**
+     * Keeps the already loaded support lists in step with a record that was just saved in the same transaction. Lists that
+     * were not loaded yet are left alone: they read the saved record from the database when they are first used.
+     */
+    public void registerEvacuationFee(EvacuationFee fee) {
+        if (Hibernate.isInitialized(evacuationFees)) {
+            evacuationFees.add(fee);
+        }
+    }
+
+    public void registerSupportPenalty(PenaltyAssessment penalty) {
+        if (Hibernate.isInitialized(supportPenalties)) {
+            supportPenalties.add(penalty);
+        }
     }
 
     /** The penalty is set but not charged yet (a driver ticket is open). */
