@@ -46,7 +46,12 @@ public record SpotView(
         BigDecimal avgRating,
         int reviewCount,
         List<String> amenities,
-        List<String> photoKeys) {
+        List<String> photoKeys,
+        List<PhotoRef> photos) {
+
+    /** A photo of the space with its stable id, in display order (position 0 is the cover). */
+    public record PhotoRef(UUID id, String storageKey, int position) {
+    }
 
     /** The view for a viewer who is not known to hold a reservation: the owner's phone number is shown to the owner only. */
     public static SpotView of(ParkingSpot spot, UUID viewerId) {
@@ -91,6 +96,7 @@ public record SpotView(
                 spot.getAvgRating(),
                 spot.getReviewCount(),
                 spot.getAmenities().stream().map(Amenity::getCode).sorted().toList(),
-                spot.getPhotos().stream().map(SpotPhoto::getStorageKey).toList());
+                spot.getPhotos().stream().map(SpotPhoto::getStorageKey).toList(),
+                spot.getPhotos().stream().map(p -> new PhotoRef(p.getId(), p.getStorageKey(), p.getPosition())).toList());
     }
 }

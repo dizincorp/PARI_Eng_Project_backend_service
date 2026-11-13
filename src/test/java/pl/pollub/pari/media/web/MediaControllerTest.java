@@ -127,6 +127,66 @@ class MediaControllerTest {
     }
 
     @Test
+    void thePhotosOfASpaceAreListedWithoutAuthentication() throws Exception {
+        UUID spot = UUID.randomUUID();
+        UUID photo = UUID.randomUUID();
+        when(media.listSpotPhotos(null, spot)).thenReturn(java.util.List.of(new PhotoView(photo, "spots/k.jpg", "http://x/media/spots/k.jpg", 0)));
+
+        mvc.perform(get("/api/spots/" + spot + "/photos"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value(photo.toString()))
+                .andExpect(jsonPath("$[0].position").value(0));
+    }
+
+    @Test
+    void replacingTheCoverAndReorderingNeedTheOwner() throws Exception {
+        UUID spot = UUID.randomUUID();
+        UUID photo = UUID.randomUUID();
+        when(media.replaceCoverPhoto(eq(USER), eq(spot), any())).thenReturn(new PhotoView(photo, "spots/k.jpg", "u", 0));
+        when(media.reorderSpotPhotos(eq(USER), eq(spot), eq(java.util.List.of(photo))))
+                .thenReturn(java.util.List.of(new PhotoView(photo, "spots/k.jpg", "u", 0)));
+
+        mvc.perform(multipart(org.springframework.http.HttpMethod.PUT, "/api/spots/" + spot + "/photos/cover").file(FILE).header("X-User-Id", USER))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(photo.toString()));
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/api/spots/" + spot + "/photos/order")
+                        .header("X-User-Id", USER).contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("{\"photoIds\":[\"" + photo + "\"]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value(photo.toString()));
+
+        mvc.perform(multipart(org.springframework.http.HttpMethod.PUT, "/api/spots/" + spot + "/photos/cover").file(FILE))
+                .andExpect(status().isUnauthorized());
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/api/spots/" + spot + "/photos/order")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON).content("{\"photoIds\":[]}"))
+                .andExpect(status().isUnauthorized());
+
+        UUID stranger = UUID.randomUUID();
+        when(media.replaceCoverPhoto(eq(stranger), eq(spot), any())).thenThrow(new ForbiddenException("no"));
+        when(media.reorderSpotPhotos(eq(stranger), eq(spot), any())).thenThrow(new ForbiddenException("no"));
+        mvc.perform(multipart(org.springframework.http.HttpMethod.PUT, "/api/spots/" + spot + "/photos/cover").file(FILE).header("X-User-Id", stranger))
+                .andExpect(status().isForbidden());
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/api/spots/" + spot + "/photos/order")
+                        .header("X-User-Id", stranger).contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("{\"photoIds\":[]}"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void aReorderWithoutTheListOrWithABadSetIsAnswered400() throws Exception {
+        UUID spot = UUID.randomUUID();
+        when(media.reorderSpotPhotos(any(), any(), any())).thenThrow(new IllegalArgumentException("every photo once"));
+
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/api/spots/" + spot + "/photos/order")
+                        .header("X-User-Id", USER).contentType(org.springframework.http.MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isBadRequest());
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/api/spots/" + spot + "/photos/order")
+                        .header("X-User-Id", USER).contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("{\"photoIds\":[\"" + UUID.randomUUID() + "\"]}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void avatarUploadUsesTheCaller() throws Exception {
         when(media.updateAvatar(eq(USER), any())).thenReturn(stored());
 

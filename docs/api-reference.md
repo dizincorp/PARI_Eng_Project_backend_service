@@ -171,6 +171,9 @@ PARI backend API version 0.0.1. Parking space rental portal. Authenticate with a
 | POST | `/api/spots/{id}/photos` | token | `multipart/form-data` object | `201` PhotoView |
 | POST | `/api/media/upload` | token | `multipart/form-data` object | `201` StoredMedia |
 | DELETE | `/api/spots/{id}/photos/{photoId}` | token |  | `204` |
+| GET | `/api/spots/{id}/photos` | public | | `200` array of PhotoView, cover first |
+| PUT | `/api/spots/{id}/photos/cover` | token (owner or ADMIN) | `multipart/form-data` `file` | `200` PhotoView |
+| PUT | `/api/spots/{id}/photos/order` | token (owner or ADMIN) | `{"photoIds": [uuid]}` | `200` array of PhotoView |
 
 **POST `/api/spots/{id}/photos` parameters**
 
@@ -183,6 +186,8 @@ PARI backend API version 0.0.1. Parking space rental portal. Authenticate with a
 | Name | In | Type | Required | Notes |
 | --- | --- | --- | --- | --- |
 | `category` | query | `SPOT_PHOTO` \| `AVATAR` | yes |  |
+
+**Photo management (PARI-64).** `GET /api/spots/{id}/photos` lists the photos with their stable ids, `position` (0 is the cover) and public `url`; it follows the visibility of the space (an inactive space is visible to its owner only). The same photos are in `SpotView.photos` (`id`, `storageKey`, `position`); `photoKeys` is kept for existing clients. `PUT .../photos/cover` uploads a new image, makes it the cover and removes the previous cover's record and file; the other photos keep their order. On a space without photos it simply adds one. `PUT .../photos/order` takes the ids of every photo of the space exactly once, in the wanted order (the first becomes the cover); a missing, repeated or unknown id gives `400` and changes nothing. Deleting a photo renumbers the rest. Add, replace, reorder and delete are for the owner or an `ADMIN` (`403` for anyone else, `404` for an unknown or archived space, and no file is written for a refused upload). A file whose database update fails is removed again, so a replaced or deleted photo leaves no record and no file behind. Not done: reordering by moving a single photo, and cleaning up files that were stored through `/api/media/upload` and never attached.
 
 **DELETE `/api/spots/{id}/photos/{photoId}` parameters**
 
@@ -708,6 +713,7 @@ PARI backend API version 0.0.1. Parking space rental portal. Authenticate with a
 | `reviewCount` | integer (int32) | no |  |
 | `amenities` | array of string | no |  |
 | `photoKeys` | array of string | no |  |
+| `photos` | array of object | no | `id`, `storageKey`, `position` of each photo, cover first (PARI-64) |
 
 ### SseEmitter
 
