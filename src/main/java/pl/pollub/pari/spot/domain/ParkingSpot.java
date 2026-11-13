@@ -29,6 +29,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 
 @Entity
 @Table(name = "parking_spots")
@@ -210,11 +211,45 @@ public class ParkingSpot extends BaseEntity {
         return photo;
     }
 
-    public void removePhoto(SpotPhoto photo) {
-        photos.remove(photo);
+    /**
+     * Puts a new photo in front as the cover and detaches the previous cover; the other photos keep their order.
+     * Returns the detached photo (null when the space had none) so the caller can delete its file.
+     */
+    public SpotPhoto replaceCoverPhoto(String storageKey) {
+        SpotPhoto old = photos.isEmpty() ? null : photos.get(0);
+        if (old != null) {
+            photos.remove(old);
+        }
+        photos.add(0, new SpotPhoto(this, storageKey, 0));
+        renumberPhotos();
+        return old;
+    }
+
+    /** Sets the order of the photos; the ids must be exactly the ids of the current photos, each once. */
+    public void reorderPhotos(List<UUID> orderedIds) {
+        if (orderedIds == null || orderedIds.size() != photos.size()
+                || new HashSet<>(orderedIds).size() != orderedIds.size()) {
+            throw new IllegalArgumentException("The list must contain every photo of the space exactly once");
+        }
+        List<SpotPhoto> ordered = new ArrayList<>();
+        for (UUID id : orderedIds) {
+            ordered.add(photos.stream().filter(p -> id.equals(p.getId())).findFirst()
+                    .orElseThrow(() -> new IllegalArgumentException("Unknown photo " + id)));
+        }
+        photos.clear();
+        photos.addAll(ordered);
+        renumberPhotos();
+    }
+
+    private void renumberPhotos() {
         for (int i = 0; i < photos.size(); i++) {
             photos.get(i).setPosition(i);
         }
+    }
+
+    public void removePhoto(SpotPhoto photo) {
+        photos.remove(photo);
+        renumberPhotos();
     }
 
     /** Sets, changes or clears the owner's gate PIN; a null or blank value removes it. */

@@ -53,7 +53,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/spots/mine").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/spots/events").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/spots", "/api/spots/{id}", "/api/spots/{id}/reviews",
-                                "/api/spots/{id}/availability-rules").permitAll()
+                                "/api/spots/{id}/availability-rules", "/api/spots/{id}/photos").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/reservations/quote").permitAll()
                         .requestMatchers(HttpMethod.GET, "/media/**").permitAll()
                         .requestMatchers("/error").permitAll()

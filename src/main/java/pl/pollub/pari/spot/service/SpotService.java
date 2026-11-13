@@ -274,6 +274,32 @@ public class SpotService {
         return photo.getStorageKey();
     }
 
+    /**
+     * Puts a new photo in front as the cover (owner or ADMIN) and detaches the old cover. Returns the new photo and the
+     * storage key of the detached one (null when there was none) so the caller can delete that file.
+     */
+    @Transactional
+    public CoverReplacement replaceCoverPhoto(UUID userId, UUID spotId, String storageKey, String url) {
+        ParkingSpot spot = manageableSpot(userId, spotId);
+        SpotPhoto old = spot.replaceCoverPhoto(storageKey);
+        spots.flush();
+        SpotPhoto cover = spot.getPhotos().get(0);
+        return new CoverReplacement(new PhotoView(cover.getId(), storageKey, url, 0), old == null ? null : old.getStorageKey());
+    }
+
+    /** The new cover and the file of the cover it replaced. */
+    public record CoverReplacement(PhotoView photo, String replacedStorageKey) {
+    }
+
+    /** Reorders the photos (owner or ADMIN): {@code orderedIds} lists every photo of the space once, cover first. */
+    @Transactional
+    public List<SpotView.PhotoRef> reorderPhotos(UUID userId, UUID spotId, List<UUID> orderedIds) {
+        ParkingSpot spot = manageableSpot(userId, spotId);
+        spot.reorderPhotos(orderedIds);
+        spots.flush();
+        return spot.getPhotos().stream().map(p -> new SpotView.PhotoRef(p.getId(), p.getStorageKey(), p.getPosition())).toList();
+    }
+
     /** Puts a deactivated space back on the market. */
     @Transactional
     public SpotView activate(UUID ownerId, UUID spotId) {

@@ -6,9 +6,11 @@ import org.springframework.web.multipart.MultipartFile;
 import pl.pollub.pari.common.exception.NotFoundException;
 import pl.pollub.pari.media.service.MediaStorage.StoredMedia;
 import pl.pollub.pari.spot.service.SpotService;
+import pl.pollub.pari.spot.service.SpotView;
 import pl.pollub.pari.user.domain.User;
 import pl.pollub.pari.user.repository.UserRepository;
 
+import java.util.List;
 import java.util.UUID;
 
 /** Image uploads for spot photos and avatars. A file whose database update fails is removed again. */
@@ -39,6 +41,33 @@ public class MediaService {
             storage.delete(stored.storageKey());
             throw e;
         }
+    }
+
+    /** Replaces the cover photo: the new file becomes position 0 and the old cover's record and file are removed. */
+    public SpotService.PhotoView replaceCoverPhoto(UUID userId, UUID spotId, MultipartFile file) {
+        spots.requireManageable(userId, spotId);
+        StoredMedia stored = storage.store(MediaCategory.SPOT_PHOTO, file);
+        try {
+            SpotService.CoverReplacement result = spots.replaceCoverPhoto(userId, spotId, stored.storageKey(), stored.url());
+            storage.delete(result.replacedStorageKey());
+            return result.photo();
+        } catch (RuntimeException e) {
+            storage.delete(stored.storageKey());
+            throw e;
+        }
+    }
+
+    /** The photos of a space with ids, positions and public URLs; visible to whoever may see the space. */
+    public List<SpotService.PhotoView> listSpotPhotos(UUID viewerId, UUID spotId) {
+        return spots.get(spotId, viewerId).photos().stream().map(this::view).toList();
+    }
+
+    public List<SpotService.PhotoView> reorderSpotPhotos(UUID userId, UUID spotId, List<UUID> orderedIds) {
+        return spots.reorderPhotos(userId, spotId, orderedIds).stream().map(this::view).toList();
+    }
+
+    private SpotService.PhotoView view(SpotView.PhotoRef p) {
+        return new SpotService.PhotoView(p.id(), p.storageKey(), storage.urlOf(p.storageKey()), p.position());
     }
 
     public void deleteSpotPhoto(UUID userId, UUID spotId, UUID photoId) {

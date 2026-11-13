@@ -5,6 +5,7 @@ import org.springframework.mock.web.MockMultipartFile;
 import pl.pollub.pari.common.exception.ForbiddenException;
 import pl.pollub.pari.media.service.MediaStorage.StoredMedia;
 import pl.pollub.pari.spot.service.SpotService;
+import pl.pollub.pari.spot.service.SpotView;
 import pl.pollub.pari.user.domain.Role;
 import pl.pollub.pari.user.domain.User;
 import pl.pollub.pari.user.repository.UserRepository;
@@ -62,6 +63,50 @@ class MediaServiceTest {
         service.deleteSpotPhoto(userId, spotId, photoId);
 
         verify(storage).delete("spots/k.jpg");
+    }
+
+    @Test
+    void replacingTheCoverDeletesTheOldFileAndKeepsTheNewOne() {
+        when(storage.store(MediaCategory.SPOT_PHOTO, file)).thenReturn(stored("spots/new.jpg"));
+        SpotService.PhotoView cover = new SpotService.PhotoView(UUID.randomUUID(), "spots/new.jpg", "u", 0);
+        when(spots.replaceCoverPhoto(userId, spotId, "spots/new.jpg", "http://x/media/spots/new.jpg"))
+                .thenReturn(new SpotService.CoverReplacement(cover, "spots/old.jpg"));
+
+        assertThat(service.replaceCoverPhoto(userId, spotId, file)).isEqualTo(cover);
+
+        verify(storage).delete("spots/old.jpg");
+        verify(storage, never()).delete("spots/new.jpg");
+    }
+
+    @Test
+    void theNewFileIsRemovedWhenReplacingTheCoverFails() {
+        when(storage.store(MediaCategory.SPOT_PHOTO, file)).thenReturn(stored("spots/new.jpg"));
+        when(spots.replaceCoverPhoto(any(), any(), anyString(), anyString())).thenThrow(new IllegalStateException("db down"));
+
+        assertThatThrownBy(() -> service.replaceCoverPhoto(userId, spotId, file)).isInstanceOf(IllegalStateException.class);
+
+        verify(storage).delete("spots/new.jpg");
+    }
+
+    @Test
+    void aStrangerReplacingTheCoverWritesNoFile() {
+        doThrow(new ForbiddenException("no")).when(spots).requireManageable(userId, spotId);
+
+        assertThatThrownBy(() -> service.replaceCoverPhoto(userId, spotId, file)).isInstanceOf(ForbiddenException.class);
+
+        verify(storage, never()).store(any(), any());
+    }
+
+    @Test
+    void theListedPhotosCarryTheirPublicUrls() {
+        UUID id = UUID.randomUUID();
+        SpotView view = mock(SpotView.class);
+        when(view.photos()).thenReturn(java.util.List.of(new SpotView.PhotoRef(id, "spots/k.jpg", 0)));
+        when(spots.get(spotId, userId)).thenReturn(view);
+        when(storage.urlOf("spots/k.jpg")).thenReturn("http://x/media/spots/k.jpg");
+
+        assertThat(service.listSpotPhotos(userId, spotId))
+                .containsExactly(new SpotService.PhotoView(id, "spots/k.jpg", "http://x/media/spots/k.jpg", 0));
     }
 
     @Test

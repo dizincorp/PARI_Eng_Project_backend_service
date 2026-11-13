@@ -2,7 +2,12 @@ package pl.pollub.pari.media.web;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
 import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -15,6 +20,7 @@ import pl.pollub.pari.media.service.MediaService;
 import pl.pollub.pari.media.service.MediaStorage.StoredMedia;
 import pl.pollub.pari.spot.service.SpotService;
 
+import java.util.List;
 import java.util.UUID;
 
 /** Image upload (PARI-40): generic upload, spot photos and the caller's avatar. Files are served from {@code /media/**}. */
@@ -37,6 +43,26 @@ public class MediaController {
     @ResponseStatus(HttpStatus.CREATED)
     public SpotService.PhotoView addPhoto(@CurrentUserId UUID userId, @PathVariable UUID id, @RequestParam MultipartFile file) {
         return media.addSpotPhoto(userId, id, file);
+    }
+
+    @GetMapping("/api/spots/{id}/photos")
+    public List<SpotService.PhotoView> photos(@CurrentUserId UUID userId, @PathVariable UUID id) {
+        return media.listSpotPhotos(userId, id);
+    }
+
+    @PutMapping(value = "/api/spots/{id}/photos/cover", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public SpotService.PhotoView replaceCover(@CurrentUserId UUID userId, @PathVariable UUID id, @RequestParam MultipartFile file) {
+        return media.replaceCoverPhoto(userId, id, file);
+    }
+
+    @PutMapping("/api/spots/{id}/photos/order")
+    public List<SpotService.PhotoView> reorder(@CurrentUserId UUID userId, @PathVariable UUID id,
+                                               @Valid @RequestBody ReorderPhotosRequest request) {
+        return media.reorderSpotPhotos(userId, id, request.photoIds());
+    }
+
+    /** The ids of all photos of the space in the wanted order; the first one becomes the cover. */
+    public record ReorderPhotosRequest(@NotNull List<UUID> photoIds) {
     }
 
     @DeleteMapping("/api/spots/{id}/photos/{photoId}")

@@ -335,6 +335,102 @@ class SpotServiceTest extends ServiceTestBase {
         assertThatThrownBy(() -> service.removePhoto(owner.getId(), id, UUID.randomUUID())).isInstanceOf(NotFoundException.class);
     }
 
+    @Test
+    void theSpotListsItsPhotosWithStableIdsInOrder() {
+        UUID id = service.create(owner.getId(), command(true, false, Set.of())).id();
+        em.flush();
+        em.clear();
+
+        List<SpotView.PhotoRef> photos = service.get(id, null).photos();
+
+        assertThat(photos).extracting(SpotView.PhotoRef::storageKey).containsExactly("spots/a.jpg", "spots/b.jpg");
+        assertThat(photos).extracting(SpotView.PhotoRef::position).containsExactly(0, 1);
+        assertThat(photos).extracting(SpotView.PhotoRef::id).doesNotContainNull();
+    }
+
+    @Test
+    void reorderingPutsTheChosenPhotoFirstAndLaterReadsKeepTheOrder() {
+        UUID id = service.create(owner.getId(), command(true, false, Set.of())).id();
+        service.addPhoto(owner.getId(), id, "spots/c.jpg", "u");
+        em.flush();
+        em.clear();
+        List<SpotView.PhotoRef> before = service.get(id, null).photos();
+        List<UUID> wanted = List.of(before.get(2).id(), before.get(0).id(), before.get(1).id());
+
+        List<SpotView.PhotoRef> result = service.reorderPhotos(owner.getId(), id, wanted);
+        em.flush();
+        em.clear();
+
+        assertThat(result).extracting(SpotView.PhotoRef::id).containsExactlyElementsOf(wanted);
+        SpotView reloaded = service.get(id, null);
+        assertThat(reloaded.photos()).extracting(SpotView.PhotoRef::id).containsExactlyElementsOf(wanted);
+        assertThat(reloaded.photos()).extracting(SpotView.PhotoRef::position).containsExactly(0, 1, 2);
+        assertThat(reloaded.photoKeys()).containsExactly("spots/c.jpg", "spots/a.jpg", "spots/b.jpg");
+    }
+
+    @Test
+    void aReorderThatIsNotAPermutationOfThePhotosIsRejected() {
+        UUID id = service.create(owner.getId(), command(true, false, Set.of())).id();
+        em.flush();
+        em.clear();
+        List<SpotView.PhotoRef> photos = service.get(id, null).photos();
+        UUID first = photos.get(0).id();
+
+        assertThatThrownBy(() -> service.reorderPhotos(owner.getId(), id, List.of(first)))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> service.reorderPhotos(owner.getId(), id, List.of(first, first)))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> service.reorderPhotos(owner.getId(), id, List.of(first, UUID.randomUUID())))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> service.reorderPhotos(owner.getId(), id, null)).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void replacingTheCoverMakesTheNewPhotoFirstAndDropsTheOldRecord() {
+        UUID id = service.create(owner.getId(), command(true, false, Set.of())).id();
+        em.flush();
+        em.clear();
+        List<SpotView.PhotoRef> before = service.get(id, null).photos();
+
+        SpotService.CoverReplacement result = service.replaceCoverPhoto(owner.getId(), id, "spots/new.jpg", "http://x/media/spots/new.jpg");
+        em.flush();
+        em.clear();
+
+        assertThat(result.replacedStorageKey()).isEqualTo("spots/a.jpg");
+        assertThat(result.photo().position()).isZero();
+        assertThat(result.photo().id()).isNotNull().isNotEqualTo(before.get(0).id());
+        SpotView reloaded = service.get(id, null);
+        assertThat(reloaded.photoKeys()).containsExactly("spots/new.jpg", "spots/b.jpg");
+        assertThat(reloaded.photos()).extracting(SpotView.PhotoRef::position).containsExactly(0, 1);
+        Number rows = (Number) em.createNativeQuery("select count(*) from spot_photos where spot_id = :id and storage_key = 'spots/a.jpg'")
+                .setParameter("id", id).getSingleResult();
+        assertThat(rows.intValue()).isZero();
+    }
+
+    @Test
+    void replacingTheCoverOfASpaceWithoutPhotosJustAddsOne() {
+        UUID id = service.create(owner.getId(), new CreateSpotCommand("G", "d", "ul. 1", "Lublin", "20-002", null,
+                51.2465, 22.5684, 500, 250, 200, Money.pln(1250), null, true, Set.of(), null, true, false)).id();
+
+        SpotService.CoverReplacement result = service.replaceCoverPhoto(owner.getId(), id, "spots/only.jpg", "u");
+
+        assertThat(result.replacedStorageKey()).isNull();
+        assertThat(service.get(id, null).photoKeys()).containsExactly("spots/only.jpg");
+    }
+
+    @Test
+    void strangersCannotReorderOrReplacePhotos() {
+        UUID id = service.create(owner.getId(), command(true, false, Set.of())).id();
+        User stranger = persistUser(Role.OWNER);
+        User driver = persistUser(Role.DRIVER);
+
+        assertThatThrownBy(() -> service.reorderPhotos(stranger.getId(), id, List.of())).isInstanceOf(ForbiddenException.class);
+        assertThatThrownBy(() -> service.replaceCoverPhoto(stranger.getId(), id, "spots/x.jpg", "u")).isInstanceOf(ForbiddenException.class);
+        assertThatThrownBy(() -> service.replaceCoverPhoto(driver.getId(), id, "spots/x.jpg", "u")).isInstanceOf(ForbiddenException.class);
+        assertThatThrownBy(() -> service.removePhoto(stranger.getId(), id, UUID.randomUUID())).isInstanceOf(ForbiddenException.class);
+        assertThat(service.get(id, null).photoKeys()).containsExactly("spots/a.jpg", "spots/b.jpg");
+    }
+
     private static CreateSpotCommand command(boolean declared, boolean verification, Set<String> amenities) {
         return build(Money.pln(1250), declared, verification, amenities);
     }
