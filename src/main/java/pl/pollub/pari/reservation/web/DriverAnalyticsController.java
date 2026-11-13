@@ -31,7 +31,7 @@ public class DriverAnalyticsController {
                           BigDecimal averageRating, int reviewedReservations) {
     }
 
-    public record Item(UUID reservationId, String spotName, Instant checkInAt, Instant checkOutAt, long durationMinutes,
+    public record Item(UUID reservationId, String spotName, Instant checkInAt, Instant checkOutAt, Long durationMinutes,
                        BigDecimal amountPaid, String currency, boolean reviewed, Integer rating) {
     }
 

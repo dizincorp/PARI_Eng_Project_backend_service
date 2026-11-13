@@ -500,8 +500,8 @@ PARI backend API version 0.0.1. Parking space rental portal. Authenticate with a
 | `activeBookingsCount` | integer (int32) | no |  |
 | `loyaltyPoints` | integer (int32) | no |  |
 | `currency` | string | no |  |
-| `summary` | object | no | completedReservations, totalSpent, totalParkingDurationMinutes, averageRating (null without reviews), reviewedReservations; over all completed sessions (PARI-60) |
-| `items` | array | no | one row per completed reservation, newest first: reservationId, spotName, checkInAt, checkOutAt, durationMinutes, amountPaid, currency, reviewed, rating (null until reviewed) |
+| `summary` | object | no | completedReservations, totalSpent, totalParkingDurationMinutes, averageRating (null without reviews), reviewedReservations; over all completed sessions, independent of the page (PARI-60). `totalParkingDurationMinutes` is the sum of the item durations (PARI-63) |
+| `items` | array | no | one row per completed reservation, newest first: reservationId, spotName, checkInAt, checkOutAt, durationMinutes, amountPaid, currency, reviewed, rating (null until reviewed). `durationMinutes` is the actual time from `checkInAt` to `checkOutAt` in whole minutes, **rounded up** (30 seconds = 1 minute, 61 seconds = 2), the same for manual and automatic check-out (both store the real end time). It is `null` when a timestamp is missing or the check-out is before the check-in; such a session is listed but not counted in the total. It does not depend on the booked interval or the price (PARI-63) |
 | `page`, `size`, `totalItems` | integer | no | query parameters `page` (default 0) and `size` (default 20, max 100) page `items` |
 
 ### LoginRequest
