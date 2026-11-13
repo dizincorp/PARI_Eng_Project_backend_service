@@ -7,12 +7,25 @@ import pl.pollub.pari.common.domain.Money;
 import pl.pollub.pari.common.exception.NotFoundException;
 import pl.pollub.pari.common.service.AuditTrail;
 import pl.pollub.pari.common.service.PlatformSettings;
+import pl.pollub.pari.common.domain.IllegalStateTransitionException;
+import pl.pollub.pari.common.exception.BadRequestException;
+import pl.pollub.pari.common.exception.ConflictException;
+import pl.pollub.pari.payment.domain.Payment;
+import pl.pollub.pari.payment.domain.PaymentType;
+import pl.pollub.pari.payment.service.PaymentService;
+import pl.pollub.pari.reservation.domain.Reservation;
+import pl.pollub.pari.reservation.domain.ReservationStatus;
 import pl.pollub.pari.reservation.service.ReservationService;
+import pl.pollub.pari.support.domain.EvacuationFee;
 import pl.pollub.pari.support.domain.EvacuationStatus;
+import pl.pollub.pari.support.domain.PenaltyAssessment;
+import pl.pollub.pari.support.domain.PenaltyState;
 import pl.pollub.pari.support.domain.Report;
 import pl.pollub.pari.support.domain.Sanction;
 import pl.pollub.pari.support.domain.SanctionType;
 import pl.pollub.pari.support.event.TicketEvent;
+import pl.pollub.pari.support.repository.EvacuationFeeRepository;
+import pl.pollub.pari.support.repository.PenaltyAssessmentRepository;
 import pl.pollub.pari.support.repository.SanctionRepository;
 import pl.pollub.pari.user.domain.User;
 import pl.pollub.pari.user.repository.UserRepository;
@@ -36,10 +49,17 @@ public class SupportCommandService {
     private final PlatformSettings settings;
     private final Clock clock;
     private final ApplicationEventPublisher events;
+    private final PenaltyAssessmentRepository penalties;
+    private final EvacuationFeeRepository evacuationFees;
+    private final PaymentService paymentService;
 
     public SupportCommandService(SupportTicketService ticketService, ReservationService reservationService, UserRepository users,
                                  ModerationService moderation, AuditTrail audit, PlatformSettings settings, Clock clock,
-                                 ApplicationEventPublisher events) {
+                                 ApplicationEventPublisher events, PenaltyAssessmentRepository penalties,
+                                 EvacuationFeeRepository evacuationFees, PaymentService paymentService) {
+        this.penalties = penalties;
+        this.evacuationFees = evacuationFees;
+        this.paymentService = paymentService;
         this.ticketService = ticketService;
         this.reservationService = reservationService;
         this.users = users;
@@ -130,6 +150,10 @@ public class SupportCommandService {
             throw new pl.pollub.pari.common.exception.ConflictException("PENALTY_PENDING",
                     "Decide about the held penalty (waive or charge it) before closing the ticket");
         }
+        if (penalties.existsByTicketIdAndState(ticketId, PenaltyState.PENDING)) {
+            throw new ConflictException("PENALTY_PENDING",
+                    "Charge or waive the penalty assessed on this ticket before closing it");
+        }
         ticket.resolve(reason);
         ticket.close(clock.instant());
         return done(supportId, ticket, "CLOSE", reason);
@@ -153,8 +177,11 @@ public class SupportCommandService {
     public TicketView advanceEvacuation(UUID supportId, UUID ticketId, EvacuationStatus next, String reason) {
         Report ticket = begin(supportId, ticketId, reason);
         ticket.advanceEvacuation(next);
-        if (next == EvacuationStatus.DONE && ticket.getEvacuationFee() != null) {
-            reservationService.chargeEvacuationFee(ticket.getReservation().getId(), ticket.getEvacuationFee());
+        if (next == EvacuationStatus.DONE && ticket.getEvacuationFee() != null && !ticket.getEvacuationFee().isZero()) {
+            String key = "evacuation-fee:" + ticketId + ":evacuation-done";
+            if (evacuationFees.findByOperationKey(key).isEmpty()) {
+                chargeFee(supportId, ticket, ticket.getEvacuationFee(), reason, key);
+            }
         }
         events.publishEvent(TicketEvent.of(TicketEvent.Type.EVACUATION_UPDATED, ticket, next.name()));
         return done(supportId, ticket, "EVACUATION_" + next.name(), reason);
@@ -166,6 +193,158 @@ public class SupportCommandService {
         Report ticket = begin(supportId, ticketId, reason);
         ticket.adjustEvacuationFee(Money.pln(feeMinor));
         return done(supportId, ticket, "EVACUATION_FEE_ADJUSTED", reason);
+    }
+
+    // ---- penalties assessed by support (PARI-87)
+
+    /**
+     * Assesses a penalty on the ticket's reservation. It records a PENDING amount and does not collect anything; support
+     * then charges or waives it. Allowed while the reservation is IN_PROGRESS, COMPLETED or NO_SHOW. The penalty is charged
+     * to the reservation's driver (the only participant with a payment method); any other target is rejected with 400
+     * PENALTY_TARGET_NOT_PAYER. {@code targetUserId} may be left out. {@code operationId} identifies the request: sending the
+     * same one again returns the ticket unchanged and creates no second record. Amounts are PLN, in minor units.
+     */
+    @Transactional
+    public TicketView assessPenalty(UUID supportId, UUID ticketId, long amountMinor, UUID targetUserId, String reason,
+                                    String operationId) {
+        Report ticket = begin(supportId, ticketId, reason);
+        String key = operationKey("penalty", ticketId, operationId);
+        if (penalties.findByOperationKey(key).isPresent()) {
+            return TicketView.of(ticket, true);
+        }
+        Reservation reservation = ticket.getReservation();
+        ReservationStatus status = reservation.getStatus();
+        if (status != ReservationStatus.IN_PROGRESS && status != ReservationStatus.COMPLETED && status != ReservationStatus.NO_SHOW) {
+            throw new ConflictException("PENALTY_RESERVATION_NOT_ELIGIBLE",
+                    "A penalty can only be assessed on a reservation that is running, completed or a no-show, not " + status);
+        }
+        User driver = reservation.getDriver();
+        if (targetUserId != null && !targetUserId.equals(driver.getId())) {
+            throw new BadRequestException("PENALTY_TARGET_NOT_PAYER", "A penalty can only be assessed on the driver of the reservation");
+        }
+        PenaltyAssessment penalty = new PenaltyAssessment(ticket, driver, Money.pln(amountMinor), reason, key,
+                users.getReferenceById(supportId));
+        penalties.saveAndFlush(penalty);
+        reservation.registerSupportPenalty(penalty);
+        return done(supportId, ticket, "ASSESS_PENALTY", reason, penaltyData(penalty));
+    }
+
+    /** Collects a PENDING penalty from the driver now. The result is CHARGED, or FAILED when the payment was refused. */
+    @Transactional
+    public TicketView chargePenalty(UUID supportId, UUID ticketId, UUID penaltyId, String reason) {
+        Report ticket = begin(supportId, ticketId, reason);
+        PenaltyAssessment penalty = loadPenalty(ticket, penaltyId);
+        requirePending(penalty, "be charged");
+        Payment payment = reservationService.chargeDriver(ticket.getReservation(), PaymentType.PENALTY, penalty.getAmount(),
+                "support-penalty:" + penalty.getId());
+        penalty.settleWith(payment, users.getReferenceById(supportId), reason, clock.instant());
+        penalties.saveAndFlush(penalty);
+        Map<String, Object> extra = penaltyData(penalty);
+        extra.put("paymentStatus", payment.getStatus().name());
+        return done(supportId, ticket, "CHARGE_PENALTY_ASSESSED", reason, extra);
+    }
+
+    /** Waives a penalty; only possible while it is PENDING. */
+    @Transactional
+    public TicketView waiveAssessedPenalty(UUID supportId, UUID ticketId, UUID penaltyId, String reason) {
+        Report ticket = begin(supportId, ticketId, reason);
+        PenaltyAssessment penalty = loadPenalty(ticket, penaltyId);
+        requirePending(penalty, "be waived");
+        penalty.waive(users.getReferenceById(supportId), reason, clock.instant());
+        penalties.saveAndFlush(penalty);
+        return done(supportId, ticket, "WAIVE_PENALTY_ASSESSED", reason, penaltyData(penalty));
+    }
+
+    // ---- itemized evacuation fees (PARI-88)
+
+    /**
+     * Adds an evacuation fee to the ticket's reservation on top of the ones already there, and charges it to the driver
+     * right away. A refused payment is stored as a FAILED item and does not count towards the total. Needs an evacuation
+     * that was requested on this ticket. {@code operationId} makes a retry harmless: the same one returns the ticket
+     * unchanged, with no second item and no second payment.
+     */
+    @Transactional
+    public TicketView addEvacuationFee(UUID supportId, UUID ticketId, long amountMinor, String reason, String operationId) {
+        Report ticket = begin(supportId, ticketId, reason);
+        if (ticket.getEvacuationStatus() == null) {
+            throw new IllegalStateTransitionException("This ticket has no evacuation");
+        }
+        String key = operationKey("evacuation-fee", ticketId, operationId);
+        if (evacuationFees.findByOperationKey(key).isPresent()) {
+            return TicketView.of(ticket, true);
+        }
+        EvacuationFee fee = chargeFee(supportId, ticket, Money.pln(amountMinor), reason, key);
+        return done(supportId, ticket, "EVACUATION_FEE_ADDED", reason, feeData(fee));
+    }
+
+    /**
+     * Reverses one charged evacuation fee in full. The fee stays in the list; a REFUND item is added next to it, so the
+     * history is kept and the total drops by that amount. A fee can be refunded once (409 EVACUATION_FEE_ALREADY_REFUNDED);
+     * a failed fee has nothing to refund. To correct an amount, refund the fee and add the right one.
+     */
+    @Transactional
+    public TicketView refundEvacuationFee(UUID supportId, UUID ticketId, UUID feeId, String reason) {
+        Report ticket = begin(supportId, ticketId, reason);
+        EvacuationFee fee = evacuationFees.findById(feeId).filter(f -> f.getTicket().getId().equals(ticketId))
+                .orElseThrow(() -> new NotFoundException("Evacuation fee not found"));
+        if (evacuationFees.existsByRefundsId(feeId)) {
+            throw new ConflictException("EVACUATION_FEE_ALREADY_REFUNDED", "This evacuation fee was already refunded");
+        }
+        if (!fee.isEligibleFee()) {
+            throw new IllegalStateTransitionException("Only a charged evacuation fee can be refunded");
+        }
+        Payment refund = paymentService.refundPayment(fee.getPayment());
+        EvacuationFee item = EvacuationFee.refundOf(fee, refund, reason, "evacuation-refund:" + feeId, users.getReferenceById(supportId));
+        evacuationFees.saveAndFlush(item);
+        ticket.getReservation().registerEvacuationFee(item);
+        return done(supportId, ticket, "EVACUATION_FEE_REFUNDED", reason, feeData(item));
+    }
+
+    private EvacuationFee chargeFee(UUID supportId, Report ticket, Money amount, String reason, String key) {
+        Payment payment = reservationService.chargeDriver(ticket.getReservation(), PaymentType.EVAC_FEE, amount, key);
+        EvacuationFee fee = evacuationFees.saveAndFlush(
+                EvacuationFee.charged(ticket, amount, payment, reason, key, users.getReferenceById(supportId)));
+        ticket.getReservation().registerEvacuationFee(fee);
+        return fee;
+    }
+
+    private PenaltyAssessment loadPenalty(Report ticket, UUID penaltyId) {
+        return penalties.findById(penaltyId).filter(p -> p.getTicket().getId().equals(ticket.getId()))
+                .orElseThrow(() -> new NotFoundException("Penalty not found"));
+    }
+
+    private static void requirePending(PenaltyAssessment penalty, String action) {
+        if (penalty.getState() != PenaltyState.PENDING) {
+            throw new IllegalStateTransitionException("Penalty", penalty.getState(), action);
+        }
+    }
+
+    private static String operationKey(String kind, UUID ticketId, String operationId) {
+        if (operationId == null || operationId.isBlank()) {
+            throw new IllegalArgumentException("An operationId is required");
+        }
+        return kind + ":" + ticketId + ":" + operationId.trim();
+    }
+
+    private static Map<String, Object> penaltyData(PenaltyAssessment p) {
+        Map<String, Object> data = new java.util.HashMap<>();
+        data.put("penaltyId", p.getId().toString());
+        data.put("amountMinor", p.getAmount().amountMinor());
+        data.put("targetUserId", p.getTarget().getId().toString());
+        data.put("penaltyState", p.getState().name());
+        return data;
+    }
+
+    private static Map<String, Object> feeData(EvacuationFee f) {
+        Map<String, Object> data = new java.util.HashMap<>();
+        data.put("feeId", f.getId().toString());
+        data.put("amountMinor", f.getAmount().amountMinor());
+        data.put("feeKind", f.getKind().name());
+        data.put("feeStatus", f.getStatus().name());
+        if (f.getRefunds() != null) {
+            data.put("refundsFeeId", f.getRefunds().getId().toString());
+        }
+        return data;
     }
 
     /** Audit metadata: who had the ticket before an assignment change (null when nobody). */

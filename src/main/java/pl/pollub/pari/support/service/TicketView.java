@@ -12,11 +12,18 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
-/** Read model of a support ticket. Internal notes are included only when the viewer is support. */
+/**
+ * Read model of a support ticket. Internal notes are included only when the viewer is support. {@code penalties} and
+ * {@code evacuationFees} are the itemized support charges of the ticket's reservation (PARI-87, PARI-88), with the totals
+ * {@code penaltyTotal} (collected support penalties) and {@code evacuationFeeTotal} (charged fees minus refunds). The
+ * {@code evacuationFee} field is only the fee planned for this ticket's evacuation.
+ */
 public record TicketView(UUID id, TicketType type, TicketSource source, TicketPriority priority, ReportStatus status,
                          UUID reservationId, String reservationCode, UUID reporterId, UUID assignedToId, String description,
                          String resolution, EvacuationStatus evacuationStatus, String evacuationDestination,
-                         BigDecimal evacuationFee, Instant createdAt, Instant closedAt, List<MessageView> messages) {
+                         BigDecimal evacuationFee, Instant createdAt, Instant closedAt, List<MessageView> messages,
+                         List<SupportCharges.PenaltyItem> penalties, BigDecimal penaltyTotal,
+                         List<SupportCharges.FeeItem> evacuationFees, BigDecimal evacuationFeeTotal) {
 
     public record MessageView(UUID id, UUID authorId, String body, boolean internalNote, Instant createdAt) {
     }
@@ -31,6 +38,8 @@ public record TicketView(UUID id, TicketType type, TicketSource source, TicketPr
                 t.getReporter() == null ? null : t.getReporter().getId(),
                 t.getAssignedTo() == null ? null : t.getAssignedTo().getId(), t.getDescription(), t.getResolution(),
                 t.getEvacuationStatus(), t.getEvacuationDestination(),
-                t.getEvacuationFee() == null ? null : t.getEvacuationFee().toDecimal(), t.getCreatedAt(), t.getClosedAt(), messages);
+                t.getEvacuationFee() == null ? null : t.getEvacuationFee().toDecimal(), t.getCreatedAt(), t.getClosedAt(), messages,
+                SupportCharges.penalties(t.getReservation()), SupportCharges.penaltyTotal(t.getReservation()),
+                SupportCharges.fees(t.getReservation()), SupportCharges.evacuationFeeTotal(t.getReservation()));
     }
 }

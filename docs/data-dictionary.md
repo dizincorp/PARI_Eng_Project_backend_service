@@ -25,10 +25,11 @@
 | [auth_tokens](#auth_tokens) | One-time and refresh tokens (refresh, e-mail verification, phone code, password reset). Table and entity exist, no endpoint uses them yet. |
 | [availability_exceptions](#availability_exceptions) | One-off periods: BLOCKED (not bookable) or OPEN (extra opening). |
 | [availability_rules](#availability_rules) | Weekly opening hours of a space (ISO day of week, local start and end time, optional validity dates). |
+| [evacuation_fees](#evacuation_fees) | Itemized evacuation charges of a reservation: FEE rows and the REFUND rows that reverse them in full (PARI-88). |
 | [notifications](#notifications) | In-app notifications for a user, created from reservation events. |
 | [parking_spots](#parking_spots) | A parking space offered by an owner: address, coordinates (PostGIS location is generated from lat/lng), size, hourly price, status, occupancy, cached rating. |
 | [payment_methods](#payment_methods) | Tokenised cards of a user (provider reference, brand, last four digits). No card numbers are stored. |
-| [payments](#payments) | Money movements of a reservation with the payment provider: CHARGE, PENALTY, REFUND, each PENDING, SUCCEEDED or FAILED. |
+| [payments](#payments) | Money movements of a reservation with the payment provider: CHARGE, PENALTY, REFUND, EVAC_FEE (an evacuation fee, PARI-88), each PENDING, SUCCEEDED or FAILED. |
 | [payouts](#payouts) | The owner's settlement for one reservation (soft escrow): gross, commission, net, released after release_at. |
 | [platform_settings](#platform_settings) | Tunable business values (commission, fees, timeouts) read through PlatformSettings; some are placeholders. |
 | [premium_subscriptions](#premium_subscriptions) | Owner Premium plans (0% commission, priority in search). |
@@ -39,6 +40,7 @@
 | [sanctions](#sanctions) | Warnings, blocks and unblocks issued to a user, from a ticket or by an unblock without a ticket. History is never deleted (support API). |
 | [spot_amenities](#spot_amenities) | Many-to-many link between spaces and amenities. |
 | [spot_photos](#spot_photos) | Photos of a space; storage_key points to a file in the media directory. |
+| [support_penalties](#support_penalties) | Penalties support assessed on a ticket's reservation: PENDING, CHARGED, WAIVED or FAILED (PARI-87). |
 | [user_roles](#user_roles) | Roles of a user: DRIVER, OWNER, VERIFIER, SUPPORT, ADMIN. |
 | [users](#users) | Every account. A person can hold several roles (see user_roles); active_role is the one used by the UI. The phone number is stored encrypted (phone_enc) and found through phone_hash. |
 | [vehicles](#vehicles) | Cars of a driver; a reservation points at one of them. |
@@ -157,6 +159,29 @@ Rules enforced by the database:
 Indexes:
 
 - `availability_rules_spot_idx`: `btree (spot_id, day_of_week)`
+
+## evacuation_fees
+
+Itemized evacuation charges of a reservation (PARI-88). Rows are never updated: a FEE is a charge, a REFUND reverses exactly one FEE in full. The evacuation total is the sum of CHARGED fees minus the refunds.
+
+| Column | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `id` | uuid | no |  | PK |
+| `reservation_id` | uuid | no |  | FK -> reservations.id |
+| `ticket_id` | uuid | no |  | FK -> reports.id |
+| `kind` | varchar(10) | no |  | FEE or REFUND |
+| `amount_minor` | bigint | no |  | greater than 0 |
+| `status` | varchar(10) | no |  | CHARGED, FAILED (payment refused, does not count) or REFUNDED |
+| `reason` | text | no |  |  |
+| `operation_key` | varchar(200) | no |  | unique; a retried command finds the existing row |
+| `payment_id` | uuid | yes |  | FK -> payments.id |
+| `refunds_fee_id` | uuid | yes |  | FK -> evacuation_fees.id; set exactly for REFUND rows |
+| `created_by` | uuid | no |  | FK -> users.id |
+| `created_at` | timestamptz | no | `now()` |  |
+| `updated_at` | timestamptz | no | `now()` |  |
+| `version` | bigint | no | `0` |  |
+
+Indexes: `evacuation_fees_reservation_idx (reservation_id)`, unique `evacuation_fees_one_refund_uq (refunds_fee_id) WHERE refunds_fee_id IS NOT NULL` (a fee is refunded at most once).
 
 ## notifications
 
@@ -289,7 +314,7 @@ Rules enforced by the database:
 
 - `payments_amount_minor_check` (check): `CHECK ((amount_minor >= 0))`
 - `payments_status_check` (check): `CHECK (((status)::text = ANY ((ARRAY['PENDING'::character varying, 'SUCCEEDED'::character varying, 'FAILED'::character varying])::text[])))`
-- `payments_type_check` (check): `CHECK (((type)::text = ANY ((ARRAY['CHARGE'::character varying, 'PENALTY'::character varying, 'REFUND'::character varying])::text[])))`
+- `payments_type_check` (check): `CHECK (((type)::text = ANY ((ARRAY['CHARGE'::character varying, 'PENALTY'::character varying, 'REFUND'::character varying, 'EVAC_FEE'::character varying])::text[])))`
 
 Indexes:
 
@@ -548,6 +573,29 @@ Photos of a space; storage_key points to a file in the media directory.
 Indexes:
 
 - `spot_photos_spot_idx`: `btree (spot_id, "position")`
+
+## support_penalties
+
+Penalties a support employee assessed on the reservation of a ticket (PARI-87). Separate from the automatic overstay penalty stored on `reservations`.
+
+| Column | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `id` | uuid | no |  | PK |
+| `reservation_id` | uuid | no |  | FK -> reservations.id |
+| `ticket_id` | uuid | no |  | FK -> reports.id |
+| `target_user_id` | uuid | no |  | FK -> users.id; the driver who pays |
+| `amount_minor` | bigint | no |  | greater than 0 |
+| `reason` | text | no |  |  |
+| `state` | varchar(10) | no |  | PENDING, CHARGED, WAIVED or FAILED |
+| `operation_key` | varchar(200) | no |  | unique; a retried assessment finds the existing row |
+| `payment_id` | uuid | yes |  | FK -> payments.id; set when it was charged or failed |
+| `assessed_by` | uuid | no |  | FK -> users.id |
+| `decided_by` | uuid | yes |  | FK -> users.id |
+| `decided_at` | timestamptz | yes |  |  |
+| `decision_reason` | text | yes |  |  |
+| `created_at` | timestamptz | no | `now()` |  |
+| `updated_at` | timestamptz | no | `now()` |  |
+| `version` | bigint | no | `0` |  |
 
 ## user_roles
 

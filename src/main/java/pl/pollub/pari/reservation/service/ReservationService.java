@@ -13,6 +13,8 @@ import pl.pollub.pari.common.exception.ForbiddenException;
 import pl.pollub.pari.common.exception.NotFoundException;
 import pl.pollub.pari.common.service.AuditTrail;
 import pl.pollub.pari.common.service.PlatformSettings;
+import pl.pollub.pari.payment.domain.Payment;
+import pl.pollub.pari.payment.domain.PaymentType;
 import pl.pollub.pari.payment.service.PaymentService;
 import pl.pollub.pari.support.domain.ReportStatus;
 import pl.pollub.pari.support.domain.TicketType;
@@ -400,14 +402,13 @@ public class ReservationService {
         events.publishEvent(ReservationEvent.of(ReservationEvent.Type.CANCELLED, reservation, supportId));
     }
 
-    /** Charges the evacuation fee to the driver's default payment method; a failure is recorded as a FAILED payment, not thrown. */
+    /**
+     * Charges the reservation's driver on their default payment method for a support item (an assessed penalty or an
+     * evacuation fee). A refusal is recorded as a FAILED payment, not thrown. The key must be unique per operation.
+     */
     @Transactional
-    public void chargeEvacuationFee(UUID reservationId, Money fee) {
-        Reservation reservation = reservations.findById(reservationId)
-                .orElseThrow(() -> new NotFoundException("Reservation not found"));
-        if (!fee.isZero()) {
-            payments.chargePenalty(reservation, fee, defaultPaymentToken(reservation.getDriver().getId()));
-        }
+    public Payment chargeDriver(Reservation reservation, PaymentType type, Money amount, String idempotencyKey) {
+        return payments.chargeItem(reservation, type, amount, defaultPaymentToken(reservation.getDriver().getId()), idempotencyKey);
     }
 
     /** The driver's running parking session; 404 when there is none. */
