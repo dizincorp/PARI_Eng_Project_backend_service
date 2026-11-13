@@ -61,9 +61,13 @@ public class DriverAnalyticsService {
                           BigDecimal averageRating, int reviewedReservations) {
     }
 
-    /** One completed parking session. {@code rating} is {@code null} until the driver reviews it. */
+    /**
+     * One completed parking session. {@code rating} is {@code null} until the driver reviews it. {@code durationMinutes}
+     * is {@code null} when the check-in or check-out time is missing or the check-out is before the check-in: such a
+     * session is listed, but never reported as a valid duration and not counted in the summary total.
+     */
     public record SessionRow(UUID reservationId, String spotName, Instant checkInAt, Instant checkOutAt,
-                             long durationMinutes, Money amountPaid, boolean reviewed, Integer rating) {
+                             Long durationMinutes, Money amountPaid, boolean reviewed, Integer rating) {
     }
 
     /** Statistics and one page of the sessions, newest first. */
@@ -112,7 +116,8 @@ public class DriverAnalyticsService {
         long minutes = 0;
         for (Reservation r : completed) {
             spent += Math.max(paid.getOrDefault(r.getId(), 0L), 0);
-            minutes += durationMinutes(r);
+            Long duration = durationMinutes(r);
+            minutes += duration == null ? 0 : duration;
         }
         BigDecimal average = reviewed.isEmpty() ? null
                 : BigDecimal.valueOf(reviewed.values().stream().mapToInt(Review::getRating).average().orElse(0))
@@ -130,9 +135,19 @@ public class DriverAnalyticsService {
         return new Statistics(summary, items, page, size, completed.size());
     }
 
-    private static long durationMinutes(Reservation r) {
-        return r.getCheckInAt() == null || r.getCheckOutAt() == null ? 0
-                : Duration.between(r.getCheckInAt(), r.getCheckOutAt()).toMinutes();
+    /**
+     * Actual time between check-in and check-out in whole minutes, rounded up (the rule the overstay minutes use too), so a
+     * session of a few seconds counts as one minute instead of zero. The same rule gives the item and the summary total,
+     * which is the sum of the item values. {@code null} when a timestamp is missing or the check-out is before the check-in.
+     * The booked interval and the price play no part: an early or late departure does not change the figure.
+     */
+    static Long durationMinutes(Reservation r) {
+        Instant in = r.getCheckInAt();
+        Instant out = r.getCheckOutAt();
+        if (in == null || out == null || out.isBefore(in)) {
+            return null;
+        }
+        return (Duration.between(in, out).toSeconds() + 59) / 60;
     }
 
     @Transactional(readOnly = true)

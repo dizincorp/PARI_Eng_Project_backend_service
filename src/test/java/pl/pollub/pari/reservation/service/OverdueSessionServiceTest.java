@@ -84,6 +84,9 @@ class OverdueSessionServiceTest extends ServiceTestBase {
 
         assertThat(r.getStatus()).isEqualTo(ReservationStatus.COMPLETED);
         assertThat(r.getCheckOutAt()).isEqualTo(NOW);
+        // the automatic check-out stores the real end time, so the driver analytics (PARI-63) measure it like a manual one
+        assertThat(DriverAnalyticsService.durationMinutes(r)).isPositive()
+                .isEqualTo((java.time.Duration.between(r.getCheckInAt(), NOW).toSeconds() + 59) / 60);
         assertThat(r.overstayMinutes()).isEqualTo(90);
         assertThat(r.isAutoCheckedOut()).isTrue();
         assertThat(spot.getOccupancy()).isEqualTo(Occupancy.FREE);

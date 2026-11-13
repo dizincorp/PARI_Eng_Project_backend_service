@@ -190,6 +190,82 @@ class DriverAnalyticsServiceTest extends DbTestBase {
         return r;
     }
 
+    @Test
+    void durationIsTheActualElapsedTimeRoundedUpToWholeMinutes() {
+        completedAfterSeconds(0, 30);     // a very short session is one minute, not zero
+        completedAfterSeconds(1, 60);     // exactly one minute
+        completedAfterSeconds(2, 61);     // one second more rounds up
+        completedAfterSeconds(3, 0);      // check-out in the same second as the check-in
+        em.flush();
+
+        DriverAnalyticsService.Statistics s = service.statistics(driver.getId(), 0, 20);
+
+        // newest first: day 3, 2, 1, 0
+        assertThat(s.items()).extracting(DriverAnalyticsService.SessionRow::durationMinutes).containsExactly(0L, 2L, 1L, 1L);
+        assertThat(s.summary().totalParkingDurationMinutes()).isEqualTo(4);
+    }
+
+    @Test
+    void theDurationDoesNotDependOnTheBookedIntervalOrThePrice() {
+        // booked for two hours, the driver stayed 45 minutes
+        completedAfterSeconds(0, 45 * 60);
+        em.flush();
+
+        assertThat(service.statistics(driver.getId(), 0, 20).items()).singleElement()
+                .satisfies(row -> assertThat(row.durationMinutes()).isEqualTo(45));
+    }
+
+    @Test
+    void aSessionWithoutValidTimestampsHasNoDurationAndIsNotInTheTotal() {
+        Reservation good = completedAfterSeconds(0, 600);
+        Reservation noCheckIn = completedAfterSeconds(1, 600);
+        Reservation noCheckOut = completedAfterSeconds(2, 600);
+        Reservation backwards = completedAfterSeconds(3, 600);
+        em.flush();
+        jdbc.update("update reservations set check_in_at = null where id = ?", noCheckIn.getId());
+        jdbc.update("update reservations set check_out_at = null where id = ?", noCheckOut.getId());
+        jdbc.update("update reservations set check_out_at = check_in_at - interval '5 minutes' where id = ?", backwards.getId());
+        em.clear();
+
+        DriverAnalyticsService.Statistics s = service.statistics(driver.getId(), 0, 20);
+
+        assertThat(s.items()).hasSize(4);
+        assertThat(s.items()).filteredOn(row -> row.reservationId().equals(good.getId()))
+                .singleElement().satisfies(row -> assertThat(row.durationMinutes()).isEqualTo(10));
+        assertThat(s.items()).filteredOn(row -> !row.reservationId().equals(good.getId()))
+                .extracting(DriverAnalyticsService.SessionRow::durationMinutes).containsOnlyNulls();
+        assertThat(s.summary().totalParkingDurationMinutes()).isEqualTo(10);
+        assertThat(s.summary().completedReservations()).isEqualTo(4);
+    }
+
+    @Test
+    void theTotalIsTheSumOverAllPagesAndEqualsTheSumOfTheItems() {
+        long expected = 0;
+        for (int i = 0; i < 5; i++) {
+            completedAfterSeconds(i, 90L * (i + 1));    // 2, 3, 5, 6, 8 minutes after rounding up
+            expected += (90L * (i + 1) + 59) / 60;
+        }
+        em.flush();
+
+        DriverAnalyticsService.Statistics first = service.statistics(driver.getId(), 0, 2);
+        DriverAnalyticsService.Statistics last = service.statistics(driver.getId(), 2, 2);
+
+        assertThat(first.items()).hasSize(2);
+        assertThat(first.summary().totalParkingDurationMinutes()).isEqualTo(expected).isEqualTo(24);
+        assertThat(last.summary().totalParkingDurationMinutes()).isEqualTo(expected);
+        assertThat(service.statistics(driver.getId(), 0, 100).items().stream()
+                .mapToLong(DriverAnalyticsService.SessionRow::durationMinutes).sum()).isEqualTo(expected);
+    }
+
+    /** A paid reservation on its own day, checked in at its start and checked out the given number of seconds later. */
+    private Reservation completedAfterSeconds(int day, long seconds) {
+        Reservation r = booking(day);
+        r.markPaid(true);
+        r.checkIn(r.getPeriod().start());
+        r.checkOut(r.getPeriod().start().plusSeconds(seconds));
+        return r;
+    }
+
     private void review(Reservation reservation, int rating) {
         em.persist(new pl.pollub.pari.review.domain.Review(reservation, reservation.getDriver(), owner, spot, rating, null));
         em.flush();
