@@ -173,6 +173,8 @@ In-app notifications for a user, created from reservation events.
 | `channel` | varchar(10) | no |  |  |
 | `read_at` | timestamptz | yes |  |  |
 | `sent_at` | timestamptz | yes |  |  |
+| `ticket_id` | uuid | yes |  | FK -> reports.id (cascade); the support ticket the notification is about (PARI-86) |
+| `message_id` | uuid | yes |  | FK -> report_messages.id (cascade); the reply it announces. Unique per user (partial index), which makes the reply notification idempotent |
 | `created_at` | timestamptz | no | `now()` |  |
 | `updated_at` | timestamptz | no | `now()` |  |
 | `version` | bigint | no | `0` |  |

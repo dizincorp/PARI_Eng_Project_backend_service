@@ -16,6 +16,7 @@ import pl.pollub.pari.user.domain.User;
 
 import java.time.Instant;
 import java.util.Map;
+import java.util.UUID;
 
 /** A message for one user on one channel (F07, F16, F25). */
 @Entity
@@ -40,6 +41,14 @@ public class Notification extends BaseEntity {
     @Column(columnDefinition = "jsonb")
     private Map<String, Object> payload;
 
+    /** The support ticket this notification is about, if any (PARI-86). */
+    @Column(name = "ticket_id")
+    private UUID ticketId;
+
+    /** The ticket reply this notification announces, if any; unique per recipient (PARI-86). */
+    @Column(name = "message_id")
+    private UUID messageId;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private NotificationChannel channel;
@@ -59,6 +68,13 @@ public class Notification extends BaseEntity {
         this.body = body;
         this.payload = payload;
         this.channel = channel;
+    }
+
+    /** Links the notification to a support ticket and, optionally, to one reply of it. */
+    public Notification aboutTicket(UUID ticketId, UUID messageId) {
+        this.ticketId = ticketId;
+        this.messageId = messageId;
+        return this;
     }
 
     public boolean isRead() {

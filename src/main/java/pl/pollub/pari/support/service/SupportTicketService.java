@@ -14,7 +14,9 @@ import pl.pollub.pari.reservation.domain.Reservation;
 import pl.pollub.pari.reservation.domain.ReservationStatus;
 import pl.pollub.pari.reservation.repository.ReservationRepository;
 import pl.pollub.pari.support.domain.Report;
+import pl.pollub.pari.support.domain.ReportMessage;
 import pl.pollub.pari.support.domain.ReportStatus;
+import pl.pollub.pari.support.event.TicketReplyEvent;
 import pl.pollub.pari.support.domain.TicketPriority;
 import pl.pollub.pari.support.domain.TicketSource;
 import pl.pollub.pari.support.domain.TicketType;
@@ -229,7 +231,14 @@ public class SupportTicketService {
         if (internalNote && !support) {
             throw new ForbiddenException("Only support can leave internal notes");
         }
-        ticket.addMessage(user, body, internalNote);
+        ReportMessage message = ticket.addMessage(user, body, internalNote);
+        User reporter = ticket.getReporter();
+        if (support && !internalNote && reporter != null && !reporter.getId().equals(userId)) {
+            tickets.flush(); // the message gets its id when it is persisted
+            var reservation = ticket.getReservation();
+            events.publishEvent(new TicketReplyEvent(ticket.getId(), message.getId(), reporter.getId(), userId,
+                    reservation.getId(), reservation.getCode(), reservation.getSpot().getId(), reservation.getSpot().getName()));
+        }
         return TicketView.of(ticket, support);
     }
 

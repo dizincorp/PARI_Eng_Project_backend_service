@@ -34,6 +34,15 @@ public class NotificationService {
         return result.map(NotificationView::of).getContent();
     }
 
+    /**
+     * Marks every unread notification of the caller about one ticket as read (PARI-86) and returns how many changed.
+     * Notifications about other tickets and other users' notifications are untouched; an unknown ticket changes nothing.
+     */
+    @Transactional
+    public int markTicketRead(UUID userId, UUID ticketId) {
+        return notifications.markTicketRead(userId, ticketId, clock.instant());
+    }
+
     /** 404 for a missing notification and for one that belongs to somebody else. */
     @Transactional
     public NotificationView markRead(UUID userId, UUID notificationId) {

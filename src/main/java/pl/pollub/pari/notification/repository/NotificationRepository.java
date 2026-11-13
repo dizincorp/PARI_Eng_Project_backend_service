@@ -23,6 +23,12 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
 
     Optional<Notification> findByIdAndUserId(UUID id, UUID userId);
 
+    boolean existsByUserIdAndMessageId(UUID userId, UUID messageId);
+
+    @Modifying
+    @Query("update Notification n set n.readAt = :now where n.user.id = :userId and n.ticketId = :ticketId and n.readAt is null")
+    int markTicketRead(@Param("userId") UUID userId, @Param("ticketId") UUID ticketId, @Param("now") Instant now);
+
     @Modifying
     @Query("update Notification n set n.readAt = :now where n.user.id = :userId and n.channel = :channel and n.readAt is null")
     int markAllRead(@Param("userId") UUID userId, @Param("channel") NotificationChannel channel, @Param("now") Instant now);
