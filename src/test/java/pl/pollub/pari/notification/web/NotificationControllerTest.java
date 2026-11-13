@@ -43,8 +43,11 @@ class NotificationControllerTest {
     @Test
     void listReturnsTheNotificationsInTheDocumentedShape() throws Exception {
         UUID id = UUID.randomUUID();
+        UUID ticket = UUID.randomUUID();
+        UUID reply = UUID.randomUUID();
         when(notifications.list(eq(USER), eq(true), eq(0), eq(20))).thenReturn(List.of(new NotificationView(
-                id, "Rezerwacja potwierdzona", "PIN: 4921", "RESERVATION_CONFIRMED", false, Instant.parse("2026-10-22T14:00:00Z"))));
+                id, "Rezerwacja potwierdzona", "PIN: 4921", "RESERVATION_CONFIRMED", false, Instant.parse("2026-10-22T14:00:00Z"),
+                ticket, reply, null)));
 
         mvc.perform(get("/api/notifications?unreadOnly=true").header("X-User-Id", USER))
                 .andExpect(status().isOk())
@@ -53,7 +56,19 @@ class NotificationControllerTest {
                 .andExpect(jsonPath("$[0].message").value("PIN: 4921"))
                 .andExpect(jsonPath("$[0].type").value("RESERVATION_CONFIRMED"))
                 .andExpect(jsonPath("$[0].read").value(false))
-                .andExpect(jsonPath("$[0].createdAt").value("2026-10-22T14:00:00Z"));
+                .andExpect(jsonPath("$[0].createdAt").value("2026-10-22T14:00:00Z"))
+                .andExpect(jsonPath("$[0].ticketId").value(ticket.toString()))
+                .andExpect(jsonPath("$[0].messageId").value(reply.toString()));
+    }
+
+    @Test
+    void markingATicketReadPassesTheCallerAndReportsHowManyChanged() throws Exception {
+        UUID ticket = UUID.randomUUID();
+        when(notifications.markTicketRead(USER, ticket)).thenReturn(2);
+
+        mvc.perform(patch("/api/notifications/tickets/" + ticket + "/read").header("X-User-Id", USER))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.updated").value(2));
     }
 
     @Test

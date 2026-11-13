@@ -17,7 +17,7 @@ PARI backend API version 0.0.1. Parking space rental portal. Authenticate with a
 - [reservation-controller](#reservation-controller) (11)
 - [review-controller](#review-controller) (2)
 - [owner-payout-controller](#owner-payout-controller) (4)
-- [notification-controller](#notification-controller) (2)
+- [notification-controller](#notification-controller) (3)
 - [spot-events-controller](#spot-events-controller) (1)
 - [owner-analytics-controller](#owner-analytics-controller) (1)
 - [driver-analytics-controller](#driver-analytics-controller) (1)
@@ -300,8 +300,11 @@ PARI backend API version 0.0.1. Parking space rental portal. Authenticate with a
 
 | Method | Path | Access | Request | Response |
 | --- | --- | --- | --- | --- |
+| PATCH | `/api/notifications/tickets/{ticketId}/read` | token |  | `200` `{"updated": n}` |
 | PATCH | `/api/notifications/{id}/read` | token |  | `200` NotificationView |
 | GET | `/api/notifications` | token |  | `200` array of NotificationView |
+
+**Support-reply notifications (PARI-86).** When a SUPPORT or ADMIN user posts a public reply on a ticket, the ticket's reporter gets one `TICKET_REPLY` notification (channel IN_APP) with `ticketId`, `messageId` and `reservationId` set. Internal notes create none, and neither does a reply by the reporter. The notification is stored, so `GET /api/notifications` returns the same read state after a reload or a new login. A repeated delivery of the same reply never creates a second one. `PATCH /api/notifications/{id}/read` reads one notification; `PATCH /api/notifications/tickets/{ticketId}/read` reads every unread notification of the caller about that ticket and returns how many changed (0 for an unknown ticket or when nothing is unread); it never touches other tickets or other users. Tickets opened by the system have no reporter, so a reply there creates no notification.
 
 **PATCH `/api/notifications/{id}/read` parameters**
 
@@ -527,6 +530,9 @@ PARI backend API version 0.0.1. Parking space rental portal. Authenticate with a
 | `type` | string | no |  |
 | `read` | boolean | no |  |
 | `createdAt` | string (date-time) | no |  |
+| `ticketId` | string (uuid) | no | support ticket, null for other notifications (PARI-86) |
+| `messageId` | string (uuid) | no | the ticket reply, null for other notifications |
+| `reservationId` | string (uuid) | no | taken from the payload when present |
 
 ### PhotoView
 

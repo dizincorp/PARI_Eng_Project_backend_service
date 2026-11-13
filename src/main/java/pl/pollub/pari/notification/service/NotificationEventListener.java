@@ -7,6 +7,7 @@ import pl.pollub.pari.notification.domain.NotificationChannel;
 import pl.pollub.pari.notification.repository.NotificationRepository;
 import pl.pollub.pari.reservation.event.ReservationEvent;
 import pl.pollub.pari.support.event.TicketEvent;
+import pl.pollub.pari.support.event.TicketReplyEvent;
 import pl.pollub.pari.user.repository.UserRepository;
 
 import java.util.Map;
@@ -112,6 +113,22 @@ public class NotificationEventListener {
                         body, data, NotificationChannel.IN_APP));
             }
         }
+    }
+
+    /**
+     * A public support reply for the ticket's reporter (PARI-86). One notification per recipient and reply: a repeated
+     * delivery of the same event creates nothing (backed by a unique index on user and message).
+     */
+    @EventListener
+    public void on(TicketReplyEvent e) {
+        if (notifications.existsByUserIdAndMessageId(e.reporterId(), e.messageId())) {
+            return;
+        }
+        Map<String, Object> data = Map.of("reservationId", e.reservationId().toString(), "code", e.reservationCode(),
+                "spotId", e.spotId().toString(), "ticketId", e.ticketId().toString(), "messageId", e.messageId().toString());
+        notifications.save(new Notification(users.getReferenceById(e.reporterId()), "TICKET_REPLY", "Odpowiedź wsparcia",
+                "Wsparcie odpowiedziało na Twoje zgłoszenie dla rezerwacji " + e.reservationCode() + " miejsca \""
+                        + e.spotName() + "\".", data, NotificationChannel.IN_APP).aboutTicket(e.ticketId(), e.messageId()));
     }
 
     private void confirmed(ReservationEvent e, String place) {
