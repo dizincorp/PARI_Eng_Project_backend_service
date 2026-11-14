@@ -20,6 +20,7 @@ import pl.pollub.pari.common.domain.Money;
 import pl.pollub.pari.common.domain.TimeRange;
 import pl.pollub.pari.common.security.EncryptedStringConverter;
 import pl.pollub.pari.spot.domain.ParkingSpot;
+import pl.pollub.pari.spot.domain.SpotUnit;
 import pl.pollub.pari.support.domain.EvacuationFee;
 import pl.pollub.pari.support.domain.PenaltyAssessment;
 import pl.pollub.pari.user.domain.User;
@@ -54,6 +55,15 @@ public class Reservation extends BaseEntity {
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "spot_id", nullable = false)
     private ParkingSpot spot;
+
+    /** The space of the listing that is held (PARI-65); the exclusion constraint is keyed on it. */
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "unit_id", nullable = false)
+    private SpotUnit unit;
+
+    /** The label of the space when the reservation was made, so a later rename does not change receipts. */
+    @Column(nullable = false, length = SpotUnit.MAX_LABEL_LENGTH)
+    private String unitLabel;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "driver_id", nullable = false)
@@ -176,6 +186,13 @@ public class Reservation extends BaseEntity {
         this.baseCost = spotCost;
         this.blockedUntil = period.end();
         this.status = ReservationStatus.PENDING_PAYMENT;
+        assignUnit(spot.firstLiveUnit());
+    }
+
+    /** Chooses the space of the listing this reservation holds; it defaults to the first live space. */
+    public void assignUnit(SpotUnit unit) {
+        this.unit = unit;
+        this.unitLabel = unit == null ? null : unit.getLabel();
     }
 
     /** A reservation with the pricing breakdown of its rental type (PARI-55). */

@@ -4,6 +4,7 @@ import pl.pollub.pari.spot.domain.Amenity;
 import pl.pollub.pari.spot.domain.Occupancy;
 import pl.pollub.pari.spot.domain.ParkingSpot;
 import pl.pollub.pari.spot.domain.SpotPhoto;
+import pl.pollub.pari.spot.domain.SpotUnit;
 import pl.pollub.pari.spot.domain.SpotStatus;
 
 import java.math.BigDecimal;
@@ -47,7 +48,12 @@ public record SpotView(
         int reviewCount,
         List<String> amenities,
         List<String> photoKeys,
-        List<PhotoRef> photos) {
+        List<PhotoRef> photos,
+        List<UnitRef> units) {
+
+    /** A bookable space of the listing (PARI-65): the id identifies it, the label is for display. */
+    public record UnitRef(UUID id, String label, int position) {
+    }
 
     /** A photo of the space with its stable id, in display order (position 0 is the cover). */
     public record PhotoRef(UUID id, String storageKey, int position) {
@@ -97,6 +103,13 @@ public record SpotView(
                 spot.getReviewCount(),
                 spot.getAmenities().stream().map(Amenity::getCode).sorted().toList(),
                 spot.getPhotos().stream().map(SpotPhoto::getStorageKey).toList(),
-                spot.getPhotos().stream().map(p -> new PhotoRef(p.getId(), p.getStorageKey(), p.getPosition())).toList());
+                spot.getPhotos().stream().map(p -> new PhotoRef(p.getId(), p.getStorageKey(), p.getPosition())).toList(),
+                unitRefs(spot));
+    }
+
+    static List<UnitRef> unitRefs(ParkingSpot spot) {
+        List<SpotUnit> live = spot.liveUnits();
+        return java.util.stream.IntStream.range(0, live.size())
+                .mapToObj(i -> new UnitRef(live.get(i).getId(), live.get(i).getLabel(), i + 1)).toList();
     }
 }

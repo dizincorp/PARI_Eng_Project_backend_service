@@ -102,6 +102,10 @@ BEGIN
     UPDATE parking_spots SET daily_rate_minor = 18000, monthly_rate_minor = 300000 WHERE id = '00000000-0000-0000-0000-0000000000c1';
     UPDATE parking_spots SET daily_rate_minor = 15000, monthly_rate_minor = 250000 WHERE id = '00000000-0000-0000-0000-0000000000c3';
 
+    -- PARI-65: every space is a listing with one bookable space (#1).
+    INSERT INTO spot_units (id, spot_id, label, ordinal)
+    SELECT gen_random_uuid(), id, '#1', 1 FROM parking_spots;
+
     INSERT INTO spot_amenities (spot_id, amenity_id)
     SELECT s.spot_id, a.id
     FROM (VALUES

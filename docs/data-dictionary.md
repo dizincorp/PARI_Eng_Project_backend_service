@@ -35,10 +35,11 @@
 | [premium_subscriptions](#premium_subscriptions) | Owner Premium plans (0% commission, priority in search). |
 | [report_messages](#report_messages) | Messages in a report thread. Not used by an endpoint yet. |
 | [reports](#reports) | Complaints about a reservation. Table and entity exist, no endpoint uses them yet. |
-| [reservations](#reservations) | A booking of a space for a time range, with the price snapshot, access codes and the session times. The exclusion constraint reservations_no_overlap forbids two slot-holding reservations overlapping. |
+| [reservations](#reservations) | A booking of a space for a time range, with the price snapshot, access codes and the session times. The exclusion constraint reservations_no_overlap forbids two slot-holding reservations of the same space (unit) overlapping. |
 | [reviews](#reviews) | A driver's rating of a space after a COMPLETED reservation; one per reservation and author. |
 | [sanctions](#sanctions) | Warnings, blocks and unblocks issued to a user, from a ticket or by an unblock without a ticket. History is never deleted (support API). |
 | [spot_amenities](#spot_amenities) | Many-to-many link between spaces and amenities. |
+| [spot_units](#spot_units) | The bookable spaces of a listing (PARI-65): a stable id, a display label, soft-deleted when removed. |
 | [spot_photos](#spot_photos) | Photos of a space; storage_key points to a file in the media directory. |
 | [support_penalties](#support_penalties) | Penalties support assessed on a ticket's reservation: PENDING, CHARGED, WAIVED or FAILED (PARI-87). |
 | [user_roles](#user_roles) | Roles of a user: DRIVER, OWNER, VERIFIER, SUPPORT, ADMIN. |
@@ -442,13 +443,15 @@ Indexes:
 
 ## reservations
 
-A booking of a space for a time range, with the price snapshot, access codes and the session times. The exclusion constraint reservations_no_overlap forbids two slot-holding reservations overlapping.
+A booking of a space for a time range, with the price snapshot, access codes and the session times. The exclusion constraint reservations_no_overlap forbids two slot-holding reservations of the same space (unit) overlapping.
 
 | Column | Type | Null | Default | Notes |
 | --- | --- | --- | --- | --- |
 | `id` | uuid | no |  | PK |
 | `code` | varchar(30) | no |  | unique |
 | `spot_id` | uuid | no |  | FK -> parking_spots.id |
+| `unit_id` | uuid | no |  | FK -> spot_units.id; the space that is held (PARI-65). A trigger fills it with the first live space of the spot when an insert leaves it out |
+| `unit_label` | varchar(20) | no |  | the label of the space when the reservation was made |
 | `driver_id` | uuid | no |  | FK -> users.id |
 | `vehicle_id` | uuid | no |  | FK -> vehicles.id |
 | `starts_at` | timestamptz | no |  |  |
@@ -555,6 +558,23 @@ Many-to-many link between spaces and amenities.
 | --- | --- | --- | --- | --- |
 | `spot_id` | uuid | no |  | PK; FK -> parking_spots.id |
 | `amenity_id` | uuid | no |  | PK; FK -> amenities.id |
+
+## spot_units
+
+The bookable spaces of a listing (PARI-65, ADR 0006). A reservation holds one unit; the exclusion constraint on reservations is keyed on `unit_id`. Every listing has at least one unit; the migration created `#1` for each existing listing.
+
+| Column | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `id` | uuid | no |  | PK |
+| `spot_id` | uuid | no |  | FK -> parking_spots.id, cascade |
+| `label` | varchar(20) | no |  | display only, not blank |
+| `ordinal` | integer | no |  | creation order inside the listing, greater than 0, never reused; unique with `spot_id` |
+| `removed_at` | timestamptz | yes |  | set when the space was removed; the row stays for old reservations |
+| `created_at` | timestamptz | no | `now()` |  |
+| `updated_at` | timestamptz | no | `now()` |  |
+| `version` | bigint | no | `0` |  |
+
+Indexes: unique `spot_units_live_label_uq (spot_id, label) WHERE removed_at IS NULL`.
 
 ## spot_photos
 

@@ -4,6 +4,7 @@ import pl.pollub.pari.auth.security.CurrentUserId;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
@@ -65,7 +66,9 @@ public class SpotController {
             List<String> photoKeys,
             boolean ownershipDeclared,
             boolean requestVerification,
-            @Size(max = 32) String ownerGatePin) {
+            @Size(max = 32) String ownerGatePin,
+            /** Number of bookable spaces to create (PARI-65); absent means one. */
+            @Min(1) Integer unitCount) {
     }
 
     /**
@@ -105,7 +108,8 @@ public class SpotController {
                 r.postalCode(), r.country(), r.lat(), r.lng(), r.lengthCm(), r.widthCm(), r.heightCm(),
                 toMoney(r.hourlyPrice()), toMoneyOrNull(r.dailyPrice()), toMoneyOrNull(r.monthlyPrice()),
                 r.accessInstructions(), r.autoAccept() == null || r.autoAccept(),
-                r.amenities(), r.photoKeys(), r.ownershipDeclared(), r.requestVerification(), r.ownerGatePin()));
+                r.amenities(), r.photoKeys(), r.ownershipDeclared(), r.requestVerification(), r.ownerGatePin()),
+                r.unitCount() == null ? 1 : r.unitCount());
     }
 
     /** Map search. Public; the optional header only lets an owner see their own access instructions. */

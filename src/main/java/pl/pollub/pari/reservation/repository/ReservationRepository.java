@@ -22,6 +22,9 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID>,
 
     boolean existsByVehicleId(UUID vehicleId);
 
+    /** True while the unit is still held at {@code now}: a slot-holding reservation whose block has not ended (PARI-65). */
+    boolean existsByUnitIdAndStatusInAndBlockedUntilAfter(UUID unitId, Collection<ReservationStatus> statuses, Instant now);
+
     boolean existsBySpotIdAndStatusIn(UUID spotId, Collection<ReservationStatus> statuses);
 
     boolean existsBySpotIdAndDriverIdAndStatusIn(UUID spotId, UUID driverId, Collection<ReservationStatus> statuses);
