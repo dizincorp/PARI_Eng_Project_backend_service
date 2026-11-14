@@ -78,6 +78,52 @@ class ReservationRepositoryTest extends DbTestBase {
     }
 
     @Test
+    void differentSpacesOfOneListingCanBeBookedForTheSameTime() {
+        pl.pollub.pari.spot.domain.SpotUnit second = spot.addUnit(null);
+        em.flush();
+
+        persistReservation(spot, driver, vehicle, T10, T12);
+        Reservation other = newReservation(spot, persistUser(Role.DRIVER), persistVehicle(driver), T10, T12);
+        other.assignUnit(second);
+        em.persist(other);
+        em.flush();
+
+        assertThat(other.getUnitLabel()).isEqualTo("#2");
+        assertThat(reservations.count()).isEqualTo(2);
+    }
+
+    @Test
+    void theSameSpaceCannotBeBookedTwiceForOverlappingTimes() {
+        pl.pollub.pari.spot.domain.SpotUnit second = spot.addUnit(null);
+        em.flush();
+        Reservation first = newReservation(spot, driver, vehicle, T10, T12);
+        first.assignUnit(second);
+        em.persist(first);
+        em.flush();
+
+        Reservation clash = newReservation(spot, persistUser(Role.DRIVER), persistVehicle(driver), T10.plusSeconds(3600), T14);
+        clash.assignUnit(second);
+
+        assertThatThrownBy(() -> reservations.saveAndFlush(clash))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("reservations_no_overlap");
+    }
+
+    @Test
+    void aReservationWithoutAChosenSpaceHoldsTheFirstOneAndKeepsItsLabelAfterARename() {
+        Reservation saved = persistReservation(spot, driver, vehicle, T10, T12);
+        em.flush();
+
+        assertThat(saved.getUnit()).isEqualTo(spot.firstLiveUnit());
+        assertThat(saved.getUnitLabel()).isEqualTo("#1");
+        spot.renameUnit(spot.firstLiveUnit(), "North 1");
+        em.flush();
+        flushAndClear();
+
+        assertThat(reservations.findByCode(saved.getCode()).orElseThrow().getUnitLabel()).isEqualTo("#1");
+    }
+
+    @Test
     void adjacentReservationsAndOtherSpotsAreAllowed() {
         persistReservation(spot, driver, vehicle, T10, T12);
         persistReservation(spot, driver, vehicle, T12, T14);

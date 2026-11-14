@@ -82,6 +82,10 @@ PARI backend API version 0.0.1. Parking space rental portal. Authenticate with a
 | DELETE | `/api/spots/{id}` | token |  | `204` |
 | GET | `/api/spots` | public |  | `200` array of SearchHit |
 | POST | `/api/spots` | token | `application/json` CreateSpotRequest | `201` SpotView |
+| GET | `/api/spots/{id}/units` | public | | `200` array of UnitRef |
+| POST | `/api/spots/{id}/units` | token (owner or ADMIN) | optional `{"label": string}` | `201` array of UnitRef |
+| PUT | `/api/spots/{id}/units/{unitId}` | token (owner or ADMIN) | `{"label": string}` | `200` array of UnitRef |
+| DELETE | `/api/spots/{id}/units/{unitId}` | token (owner or ADMIN) | | `200` array of UnitRef |
 | POST | `/api/spots/{id}/deactivate` | token |  | `200` SpotView |
 | POST | `/api/spots/{id}/activate` | token |  | `200` SpotView |
 | GET | `/api/spots/{id}/booked-slots` | token |  | `200` array of BookedSlot |
@@ -186,6 +190,8 @@ PARI backend API version 0.0.1. Parking space rental portal. Authenticate with a
 | Name | In | Type | Required | Notes |
 | --- | --- | --- | --- | --- |
 | `category` | query | `SPOT_PHOTO` \| `AVATAR` | yes |  |
+
+**Bookable spaces in one listing (PARI-65, ADR 0006, part 1 of 3).** A listing is one or more numbered spaces ("units") at the same address. The shared data (address, photos, description, prices, gate PIN, access instructions) stays on the listing; a unit has an `id` (the identifier) and a `label` (display only, `#1`, `#2`, ..., 1 to 20 characters, unique among the live spaces of the listing, case-insensitive). Every listing, also the existing ones, has at least `#1`. `POST /api/spots` accepts `unitCount` (1 to `max_units_per_spot`, default 1) and creates `#1` to `#n`. `GET /api/spots/{id}/units` lists the live spaces with their ids (also `SpotView.units`); `POST` adds one (without a label the next free `#n`), `PUT` renames, `DELETE` removes one; each returns the live spaces afterwards. Errors: `409 SPOT_UNIT_LABEL_TAKEN`, `409 SPOT_UNIT_LIMIT` (the limit is the placeholder setting `max_units_per_spot` = 50), `409 SPOT_UNIT_LAST` (the last space cannot be removed, archive the listing instead), `409 SPOT_UNIT_HAS_RESERVATIONS` (a reservation still holds the space, `details.label`), `400` for a bad label or a bad `unitCount`, `404` for an unknown space, `403` for anyone but the owner or an ADMIN. A removed space is kept, so old reservations keep their unit and the label they had. The database now guarantees no overlap per space (`reservations_no_overlap` is keyed on `unit_id`). **Not available yet** (the next two pull requests): choosing a space when booking and auto-assignment, search by free spaces, per-space blocks and calendar, occupancy per space, and the label in reservation views, notifications and receipts. Until then every booking holds the first live space, so the other spaces cannot yet be booked in parallel and a listing still shows as unavailable while its first space is booked.
 
 **Photo management (PARI-64).** `GET /api/spots/{id}/photos` lists the photos with their stable ids, `position` (0 is the cover) and public `url`; it follows the visibility of the space (an inactive space is visible to its owner only). The same photos are in `SpotView.photos` (`id`, `storageKey`, `position`); `photoKeys` is kept for existing clients. `PUT .../photos/cover` uploads a new image, makes it the cover and removes the previous cover's record and file; the other photos keep their order. On a space without photos it simply adds one. `PUT .../photos/order` takes the ids of every photo of the space exactly once, in the wanted order (the first becomes the cover); a missing, repeated or unknown id gives `400` and changes nothing. Deleting a photo renumbers the rest. Add, replace, reorder and delete are for the owner or an `ADMIN` (`403` for anyone else, `404` for an unknown or archived space, and no file is written for a refused upload). A file whose database update fails is removed again, so a replaced or deleted photo leaves no record and no file behind. Not done: reordering by moving a single photo, and cleaning up files that were stored through `/api/media/upload` and never attached.
 
@@ -477,6 +483,7 @@ PARI backend API version 0.0.1. Parking space rental portal. Authenticate with a
 | `hourlyPrice` | number | yes | min 0.01 |
 | `accessInstructions` | string | no |  |
 | `ownerGatePin` | string | no | max 32; the owner's gate PIN, stored encrypted; blank or left out = none (PARI-85) |
+| `unitCount` | integer (int32) | no | number of bookable spaces to create, at least 1; the maximum is the setting `max_units_per_spot`; default 1 (PARI-65) |
 | `autoAccept` | boolean | no |  |
 | `amenities` | array of string | no |  |
 | `photoKeys` | array of string | no |  |
@@ -714,6 +721,7 @@ PARI backend API version 0.0.1. Parking space rental portal. Authenticate with a
 | `amenities` | array of string | no |  |
 | `photoKeys` | array of string | no |  |
 | `photos` | array of object | no | `id`, `storageKey`, `position` of each photo, cover first (PARI-64) |
+| `units` | array of object | no | the live bookable spaces: `id`, `label`, `position` (PARI-65) |
 
 ### SseEmitter
 

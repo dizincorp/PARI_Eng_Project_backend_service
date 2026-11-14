@@ -3,6 +3,7 @@ package pl.pollub.pari.spot.service;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import pl.pollub.pari.common.domain.Money;
+import pl.pollub.pari.common.service.PlatformSettings;
 import pl.pollub.pari.common.exception.ConflictException;
 import pl.pollub.pari.common.exception.ForbiddenException;
 import pl.pollub.pari.common.exception.NotFoundException;
@@ -130,10 +131,13 @@ public class SpotService {
     private final UserRepository users;
     private final VerificationRequestRepository verifications;
     private final ReservationRepository reservations;
+    private final PlatformSettings settings;
     private final Clock clock;
 
     public SpotService(ParkingSpotRepository spots, AmenityRepository amenities, UserRepository users,
-                       VerificationRequestRepository verifications, ReservationRepository reservations, Clock clock) {
+                       VerificationRequestRepository verifications, ReservationRepository reservations,
+                       PlatformSettings settings, Clock clock) {
+        this.settings = settings;
         this.spots = spots;
         this.amenities = amenities;
         this.users = users;
@@ -149,6 +153,13 @@ public class SpotService {
      */
     @Transactional
     public SpotView create(UUID ownerId, CreateSpotCommand cmd) {
+        return create(ownerId, cmd, 1);
+    }
+
+    /** Creates a listing with {@code unitCount} bookable spaces (#1 ... #n); at least 1 and at most {@code max_units_per_spot}. */
+    @Transactional
+    public SpotView create(UUID ownerId, CreateSpotCommand cmd, int unitCount) {
+        requireUnitCount(unitCount);
         User owner = users.findById(ownerId).orElseThrow(() -> new NotFoundException("User not found"));
         if (owner.isBlocked()) {
             throw new ForbiddenException("The account is blocked");
@@ -175,6 +186,9 @@ public class SpotService {
         spot.getAmenities().addAll(resolveAmenities(cmd.amenityCodes()));
         if (cmd.photoKeys() != null) {
             cmd.photoKeys().forEach(spot::addPhoto);
+        }
+        for (int i = 1; i < unitCount; i++) {
+            spot.addUnit(null);
         }
         spot.declareOwnership(clock.instant());
         spot.activate();
@@ -248,6 +262,18 @@ public class SpotService {
         spot.archive();
     }
 
+    /** Writes pending changes so new rows have their ids; used by the unit service. */
+    void flushChanges() {
+        spots.flush();
+    }
+
+    private void requireUnitCount(int unitCount) {
+        int max = settings.integer("max_units_per_spot");
+        if (unitCount < 1 || unitCount > max) {
+            throw new IllegalArgumentException("A listing needs between 1 and " + max + " spaces");
+        }
+    }
+
     /** Fails with 404 or 403 unless the caller may manage the space; lets uploads be refused before a file is written. */
     @Transactional(readOnly = true)
     public void requireManageable(UUID userId, UUID spotId) {
@@ -319,7 +345,7 @@ public class SpotService {
     }
 
     /** The space for its owner or an ADMIN: 404 when it does not exist (or was removed), 403 for anyone else. */
-    private ParkingSpot manageableSpot(UUID userId, UUID spotId) {
+    ParkingSpot manageableSpot(UUID userId, UUID spotId) {
         ParkingSpot spot = spots.findById(spotId).orElseThrow(() -> new NotFoundException("Parking spot not found"));
         if (spot.getStatus() == SpotStatus.ARCHIVED) {
             throw new NotFoundException("Parking spot not found");

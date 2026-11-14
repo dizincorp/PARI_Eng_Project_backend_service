@@ -115,6 +115,11 @@ public class ParkingSpot extends BaseEntity {
     @OrderBy("position ASC")
     private List<SpotPhoto> photos = new ArrayList<>();
 
+    /** The bookable spaces of the listing, including removed ones (PARI-65); a new listing starts with #1. */
+    @OneToMany(mappedBy = "spot", cascade = CascadeType.ALL)
+    @OrderBy("ordinal ASC")
+    private List<SpotUnit> units = new ArrayList<>();
+
     @ManyToMany
     @JoinTable(name = "spot_amenities",
             joinColumns = @JoinColumn(name = "spot_id"),
@@ -133,6 +138,65 @@ public class ParkingSpot extends BaseEntity {
         this.location = location;
         this.dimensions = dimensions;
         this.hourlyPrice = hourlyPrice;
+        this.units.add(new SpotUnit(this, "#1", 1));
+    }
+
+    /** The spaces that can still be booked, in creation order. */
+    public List<SpotUnit> liveUnits() {
+        return units.stream().filter(SpotUnit::isLive).toList();
+    }
+
+    /** The first live space: the one a booking gets when it does not name a unit. */
+    public SpotUnit firstLiveUnit() {
+        return units.stream().filter(SpotUnit::isLive).findFirst().orElse(null);
+    }
+
+    /**
+     * Adds a space. Without a label it is called after its creation number (#2, #3, ...); the label must differ from the
+     * labels of the live spaces.
+     */
+    public SpotUnit addUnit(String label) {
+        int ordinal = units.stream().mapToInt(SpotUnit::getOrdinal).max().orElse(0) + 1;
+        String wanted = label == null || label.isBlank() ? nextFreeLabel(ordinal) : SpotUnit.validLabel(label);
+        requireFreeLabel(wanted, null);
+        SpotUnit unit = new SpotUnit(this, wanted, ordinal);
+        units.add(unit);
+        return unit;
+    }
+
+    public void renameUnit(SpotUnit unit, String label) {
+        String wanted = SpotUnit.validLabel(label);
+        requireFreeLabel(wanted, unit);
+        unit.rename(wanted);
+    }
+
+    /** Takes a space out of service; the last live space cannot be removed. */
+    public void removeUnit(SpotUnit unit, Instant now) {
+        if (!unit.isLive()) {
+            throw new IllegalStateTransitionException("Unit", "REMOVED", "be removed");
+        }
+        if (liveUnits().size() <= 1) {
+            throw new IllegalStateTransitionException("Unit", "LAST", "be removed");
+        }
+        unit.remove(now);
+    }
+
+    public boolean hasLiveUnitLabel(String label, SpotUnit except) {
+        return units.stream().anyMatch(u -> u.isLive() && u != except && u.getLabel().equalsIgnoreCase(label.trim()));
+    }
+
+    private void requireFreeLabel(String label, SpotUnit except) {
+        if (hasLiveUnitLabel(label, except)) {
+            throw new IllegalArgumentException("A space with the label " + label + " already exists");
+        }
+    }
+
+    private String nextFreeLabel(int from) {
+        int n = from;
+        while (hasLiveUnitLabel("#" + n, null)) {
+            n++;
+        }
+        return "#" + n;
     }
 
     /** F09: the owner confirms the right to dispose of the space. Required before the listing can be activated. */
