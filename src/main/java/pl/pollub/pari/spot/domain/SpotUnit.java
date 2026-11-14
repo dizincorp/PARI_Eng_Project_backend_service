@@ -35,6 +35,11 @@ public class SpotUnit extends BaseEntity {
 
     private Instant removedAt;
 
+    /** Changed by check-in and check-out of a reservation that holds this space. */
+    @jakarta.persistence.Enumerated(jakarta.persistence.EnumType.STRING)
+    @Column(nullable = false)
+    private Occupancy occupancy = Occupancy.FREE;
+
     protected SpotUnit() {
     }
 
@@ -46,6 +51,18 @@ public class SpotUnit extends BaseEntity {
 
     public boolean isLive() {
         return removedAt == null;
+    }
+
+    public boolean isOccupied() {
+        return occupancy == Occupancy.OCCUPIED;
+    }
+
+    void occupy() {
+        this.occupancy = Occupancy.OCCUPIED;
+    }
+
+    void release() {
+        this.occupancy = Occupancy.FREE;
     }
 
     void rename(String newLabel) {

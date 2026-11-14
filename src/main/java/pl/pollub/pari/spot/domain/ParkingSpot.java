@@ -161,6 +161,7 @@ public class ParkingSpot extends BaseEntity {
         requireFreeLabel(wanted, null);
         SpotUnit unit = new SpotUnit(this, wanted, ordinal);
         units.add(unit);
+        refreshOccupancy();
         return unit;
     }
 
@@ -179,6 +180,7 @@ public class ParkingSpot extends BaseEntity {
             throw new IllegalStateTransitionException("Unit", "LAST", "be removed");
         }
         unit.remove(now);
+        refreshOccupancy();
     }
 
     public boolean hasLiveUnitLabel(String label, SpotUnit except) {
@@ -256,12 +258,37 @@ public class ParkingSpot extends BaseEntity {
         return status == SpotStatus.ACTIVE;
     }
 
+    /** Marks the first live space occupied; for a listing with one space this is the whole listing. */
     public void occupy() {
-        this.occupancy = Occupancy.OCCUPIED;
+        occupy(firstLiveUnit());
     }
 
+    /** Marks every live space free. */
     public void release() {
-        this.occupancy = Occupancy.FREE;
+        liveUnits().forEach(SpotUnit::release);
+        refreshOccupancy();
+    }
+
+    /** A guest checked in to this space (PARI-65). */
+    public void occupy(SpotUnit unit) {
+        unit.occupy();
+        refreshOccupancy();
+    }
+
+    /** The guest of this space checked out (PARI-65). */
+    public void release(SpotUnit unit) {
+        unit.release();
+        refreshOccupancy();
+    }
+
+    public int occupiedUnitCount() {
+        return (int) liveUnits().stream().filter(SpotUnit::isOccupied).count();
+    }
+
+    /** The listing is occupied only when every live space is. */
+    private void refreshOccupancy() {
+        List<SpotUnit> live = liveUnits();
+        this.occupancy = !live.isEmpty() && live.stream().allMatch(SpotUnit::isOccupied) ? Occupancy.OCCUPIED : Occupancy.FREE;
     }
 
     public void updateRating(BigDecimal average, int count) {

@@ -102,8 +102,8 @@ class SpotControllerTest {
     @Test
     void bookedSlotsNeedLoginAndAWindow() throws Exception {
         UUID id = UUID.randomUUID();
-        when(calendar.bookedSlots(any(), any(), any(), any())).thenReturn(List.of(
-                new SpotCalendarService.BookedSlot(null, null, Instant.parse("2030-01-07T10:00:00Z"), Instant.parse("2030-01-07T12:00:00Z"), "CONFIRMED")));
+        when(calendar.bookedSlots(any(), any(), any(), any(), any())).thenReturn(List.of(
+                new SpotCalendarService.BookedSlot(null, null, Instant.parse("2030-01-07T10:00:00Z"), Instant.parse("2030-01-07T12:00:00Z"), "CONFIRMED", UUID.randomUUID(), "#1")));
 
         mvc.perform(get("/api/spots/" + id + "/booked-slots?from=2030-01-07T00:00:00Z&to=2030-01-08T00:00:00Z"))
                 .andExpect(status().isUnauthorized());
@@ -116,7 +116,7 @@ class SpotControllerTest {
     @Test
     void calendarBlocksAreAnAliasOfBlockedPeriods() throws Exception {
         UUID id = UUID.randomUUID();
-        when(availability.blockPeriod(any(), any(), any(), any())).thenThrow(
+        when(availability.blockPeriod(any(), any(), any(), any(), any())).thenThrow(
                 new ConflictException("PERIOD_HAS_RESERVATIONS", "A reservation already exists in this period"));
 
         mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/spots/" + id + "/calendar/blocks")

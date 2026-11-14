@@ -21,7 +21,9 @@ public record ReservationEvent(
         UUID actorId,
         String pinCode,
         long overstayMinutes,
-        BigDecimal penalty) {
+        BigDecimal penalty,
+        String unitLabel,
+        boolean multiUnit) {
 
     public enum Type {
         /** Paid, waiting for the owner's decision. */
@@ -50,16 +52,19 @@ public record ReservationEvent(
     public static ReservationEvent of(Type type, Reservation r, UUID actorId) {
         return new ReservationEvent(type, r.getId(), r.getCode(), r.getSpot().getId(), r.getSpot().getName(),
                 r.getDriver().getId(), r.getSpot().getOwner().getId(), actorId,
-                type == Type.BOOKED || type == Type.ACCEPTED ? r.getPinCode() : null, 0, null);
+                type == Type.BOOKED || type == Type.ACCEPTED ? r.getPinCode() : null, 0, null,
+                r.getUnitLabel(), r.getSpot().liveUnits().size() > 1);
     }
 
     public static ReservationEvent autoCheckout(Reservation r, long minutes, BigDecimal penalty) {
         return new ReservationEvent(Type.AUTO_CHECKOUT, r.getId(), r.getCode(), r.getSpot().getId(), r.getSpot().getName(),
-                r.getDriver().getId(), r.getSpot().getOwner().getId(), null, null, minutes, penalty);
+                r.getDriver().getId(), r.getSpot().getOwner().getId(), null, null, minutes, penalty,
+                r.getUnitLabel(), r.getSpot().liveUnits().size() > 1);
     }
 
     public static ReservationEvent overstay(Reservation r, UUID actorId, long minutes, BigDecimal penalty) {
         return new ReservationEvent(Type.OVERSTAY, r.getId(), r.getCode(), r.getSpot().getId(), r.getSpot().getName(),
-                r.getDriver().getId(), r.getSpot().getOwner().getId(), actorId, null, minutes, penalty);
+                r.getDriver().getId(), r.getSpot().getOwner().getId(), actorId, null, minutes, penalty,
+                r.getUnitLabel(), r.getSpot().liveUnits().size() > 1);
     }
 }

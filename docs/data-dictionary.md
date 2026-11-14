@@ -121,6 +121,7 @@ One-off periods: BLOCKED (not bookable) or OPEN (extra opening).
 | `ends_at` | timestamptz | no |  |  |
 | `kind` | varchar(10) | no |  |  |
 | `reason` | varchar(255) | yes |  |  |
+| `unit_id` | uuid | yes |  | FK -> spot_units.id; the space a BLOCKED period applies to, null = every space of the listing; null for OPEN periods (PARI-65) |
 | `created_at` | timestamptz | no | `now()` |  |
 | `updated_at` | timestamptz | no | `now()` |  |
 | `version` | bigint | no | `0` |  |
@@ -570,6 +571,7 @@ The bookable spaces of a listing (PARI-65, ADR 0006). A reservation holds one un
 | `label` | varchar(20) | no |  | display only, not blank |
 | `ordinal` | integer | no |  | creation order inside the listing, greater than 0, never reused; unique with `spot_id` |
 | `removed_at` | timestamptz | yes |  | set when the space was removed; the row stays for old reservations |
+| `occupancy` | varchar(20) | no | `FREE` | `FREE` or `OCCUPIED`; changed by check-in and check-out (PARI-65 part 3) |
 | `created_at` | timestamptz | no | `now()` |  |
 | `updated_at` | timestamptz | no | `now()` |  |
 | `version` | bigint | no | `0` |  |

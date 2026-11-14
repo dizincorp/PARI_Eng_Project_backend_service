@@ -31,7 +31,7 @@ public class NotificationEventListener {
 
     @EventListener
     public void on(ReservationEvent e) {
-        String place = "\"" + e.spotName() + "\"";
+        String place = "\"" + e.spotName() + "\"" + (e.multiUnit() ? " (" + e.unitLabel() + ")" : "");
         switch (e.type()) {
             case BOOKED -> {
                 confirmed(e, place);
@@ -90,9 +90,12 @@ public class NotificationEventListener {
     /** Ticket and evacuation notices (PARI-73). Support has no push: it works from the queue. */
     @EventListener
     public void on(TicketEvent e) {
-        String place = "\"" + e.spotName() + "\"";
-        Map<String, Object> data = Map.of("reservationId", e.reservationId().toString(), "code", e.reservationCode(),
-                "spotId", e.spotId().toString(), "ticketId", e.ticketId().toString());
+        String place = "\"" + e.spotName() + "\"" + (e.multiUnit() ? " (" + e.unitLabel() + ")" : "");
+        Map<String, Object> data = new java.util.HashMap<>(Map.of("reservationId", e.reservationId().toString(),
+                "code", e.reservationCode(), "spotId", e.spotId().toString(), "ticketId", e.ticketId().toString()));
+        if (e.unitLabel() != null) {
+            data.put("unitLabel", e.unitLabel());
+        }
         switch (e.type()) {
             case CREATED -> notifications.save(new Notification(users.getReferenceById(e.ownerId()), "TICKET_CREATED",
                     "Zgłoszenie dla rezerwacji " + e.reservationCode(),
@@ -137,8 +140,11 @@ public class NotificationEventListener {
     }
 
     private void notify(ReservationEvent e, UUID userId, String type, String title, String body) {
-        notifications.save(new Notification(users.getReferenceById(userId), type, title, body,
-                Map.of("reservationId", e.reservationId().toString(), "code", e.code(), "spotId", e.spotId().toString()),
-                NotificationChannel.IN_APP));
+        Map<String, Object> data = new java.util.HashMap<>(Map.of("reservationId", e.reservationId().toString(),
+                "code", e.code(), "spotId", e.spotId().toString()));
+        if (e.unitLabel() != null) {
+            data.put("unitLabel", e.unitLabel());
+        }
+        notifications.save(new Notification(users.getReferenceById(userId), type, title, body, data, NotificationChannel.IN_APP));
     }
 }

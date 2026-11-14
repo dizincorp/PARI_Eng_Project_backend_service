@@ -32,7 +32,8 @@ public class SpotCalendarService {
      * One occupied interval. {@code reservationId} is filled only for the owner of the space and the driver of that
      * reservation; others see the interval without knowing whose it is. A blocked period has {@code status} BLOCKED and a {@code blockId}.
      */
-    public record BookedSlot(UUID reservationId, UUID blockId, Instant start, Instant end, String status) {
+    public record BookedSlot(UUID reservationId, UUID blockId, Instant start, Instant end, String status,
+                             UUID unitId, String unitLabel) {
     }
 
     private final ParkingSpotRepository spots;
@@ -49,6 +50,15 @@ public class SpotCalendarService {
     /** Intervals with {@code start < to} and {@code end > from}: live reservations and the owner's blocked periods, earliest first. */
     @Transactional(readOnly = true)
     public List<BookedSlot> bookedSlots(UUID viewerId, UUID spotId, Instant from, Instant to) {
+        return bookedSlots(viewerId, spotId, from, to, null);
+    }
+
+    /**
+     * Same, for one space when {@code unitId} is given (PARI-65): its reservations, its own blocks and the listing-wide
+     * ones. Each slot names its space; a listing-wide block has no space.
+     */
+    @Transactional(readOnly = true)
+    public List<BookedSlot> bookedSlots(UUID viewerId, UUID spotId, Instant from, Instant to, UUID unitId) {
         if (from == null || to == null || !to.isAfter(from)) {
             throw new IllegalArgumentException("'to' must be after 'from'");
         }
@@ -57,16 +67,24 @@ public class SpotCalendarService {
         if ((spot.getStatus() != SpotStatus.ACTIVE && !isOwner) || spot.getStatus() == SpotStatus.ARCHIVED) {
             throw new NotFoundException("Parking spot not found");
         }
+        if (unitId != null && spot.liveUnits().stream().noneMatch(u -> unitId.equals(u.getId()))) {
+            throw new NotFoundException("Space not found");
+        }
         List<BookedSlot> slots = new ArrayList<>();
         for (Reservation r : reservations.findOverlapping(spotId, OCCUPYING, from, to)) {
+            if (unitId != null && !unitId.equals(r.getUnit().getId())) {
+                continue;
+            }
             boolean mayIdentify = isOwner || r.getDriver().getId().equals(viewerId);
             slots.add(new BookedSlot(mayIdentify ? r.getId() : null, null, r.getPeriod().start(), r.getPeriod().end(),
-                    r.getStatus().name()));
+                    r.getStatus().name(), r.getUnit().getId(), r.getUnitLabel()));
         }
         exceptions.findOverlapping(spotId, from, to).stream()
                 .filter(e -> e.getKind() == ExceptionKind.BLOCKED)
+                .filter(e -> unitId == null || e.getUnit() == null || unitId.equals(e.getUnit().getId()))
                 .forEach(e -> slots.add(new BookedSlot(null, isOwner ? e.getId() : null, e.getPeriod().start(),
-                        e.getPeriod().end(), "BLOCKED")));
+                        e.getPeriod().end(), "BLOCKED", e.getUnit() == null ? null : e.getUnit().getId(),
+                        e.getUnit() == null ? null : e.getUnit().getLabel())));
         slots.sort(Comparator.comparing(BookedSlot::start));
         return slots;
     }

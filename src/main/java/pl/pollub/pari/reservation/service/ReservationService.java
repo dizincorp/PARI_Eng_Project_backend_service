@@ -169,7 +169,7 @@ public class ReservationService {
         }
         Duration buffer = Duration.ofMinutes(settings.integer("reservation_buffer_minutes"));
         // the space of an earlier reservation stays blocked for its buffer, so a new one may start only after that
-        SpotUnit unit = chooseUnit(spot, cmd.unitId(), period.start(), period.end().plus(buffer));
+        SpotUnit unit = chooseUnit(spot, cmd.unitId(), period, period.end().plus(buffer));
         throwIfVehicleBusy(vehicle.getId(), period);
 
         PricingService.Quote quote = pricing.quote(spot, period, cmd.bookingType(), cmd.durationMonths());
@@ -261,8 +261,8 @@ public class ReservationService {
         audit.record(driverId, "Reservation", reservation.getId(), "CHECKED_IN", Map.of("code", reservation.getCode()));
         // PARI-21: the occupancy flips on every check-in; the ticket has no condition on realtimeStatusEnabled
         ParkingSpot spot = reservation.getSpot();
-        spot.occupy();
-        events.publishEvent(new SpotOccupancyChanged(spot.getId(), spot.getOccupancy(), reservation.getCheckInAt()));
+        spot.occupy(reservation.getUnit());
+        events.publishEvent(SpotOccupancyChanged.of(spot, reservation.getUnit(), reservation.getCheckInAt()));
         events.publishEvent(ReservationEvent.of(ReservationEvent.Type.CHECKED_IN, reservation, driverId));
         return ReservationView.of(reservation, driverId);
     }
@@ -354,8 +354,8 @@ public class ReservationService {
         audit.record(actorId, "Reservation", reservation.getId(), auditAction,
                 Map.of("code", reservation.getCode(), "penaltyMinor", penalty.amountMinor()));
         ParkingSpot spot = reservation.getSpot();
-        spot.release();
-        events.publishEvent(new SpotOccupancyChanged(spot.getId(), spot.getOccupancy(), now));
+        spot.release(reservation.getUnit());
+        events.publishEvent(SpotOccupancyChanged.of(spot, reservation.getUnit(), now));
         return penalty;
     }
 
@@ -502,18 +502,24 @@ public class ReservationService {
      * The space the booking holds (PARI-65): the one the driver named, or the first live space that is free for the whole
      * range. 404 for a space that is not a live space of this listing, 409 when it (or every space) is taken.
      */
-    private SpotUnit chooseUnit(ParkingSpot spot, UUID unitId, Instant start, Instant blockedUntil) {
+    private SpotUnit chooseUnit(ParkingSpot spot, UUID unitId, TimeRange period, Instant blockedUntil) {
+        List<SpotUnit> candidates = spot.liveUnits();
         if (unitId != null) {
-            SpotUnit unit = spot.liveUnits().stream().filter(u -> unitId.equals(u.getId())).findFirst()
-                    .orElseThrow(() -> new NotFoundException("Space not found"));
-            if (reservations.existsOverlappingOnUnit(unit.getId(), ReservationStatus.SLOT_HOLDING, start, blockedUntil)) {
-                throw slotTaken();
-            }
-            return unit;
+            candidates = List.of(candidates.stream().filter(u -> unitId.equals(u.getId())).findFirst()
+                    .orElseThrow(() -> new NotFoundException("Space not found")));
         }
-        return spot.liveUnits().stream()
-                .filter(u -> !reservations.existsOverlappingOnUnit(u.getId(), ReservationStatus.SLOT_HOLDING, start, blockedUntil))
-                .findFirst().orElseThrow(ReservationService::slotTaken);
+        boolean anyTaken = false;
+        for (SpotUnit unit : candidates) {
+            if (reservations.existsOverlappingOnUnit(unit.getId(), ReservationStatus.SLOT_HOLDING, period.start(), blockedUntil)) {
+                anyTaken = true;
+            } else if (!availability.isUnitBlocked(spot.getId(), unit.getId(), period)) {
+                return unit;
+            }
+        }
+        if (anyTaken) {
+            throw slotTaken();
+        }
+        throw new ConflictException("SPOT_NOT_AVAILABLE", "The owner does not offer this space at the requested time");
     }
 
     private static ConflictException slotTaken() {

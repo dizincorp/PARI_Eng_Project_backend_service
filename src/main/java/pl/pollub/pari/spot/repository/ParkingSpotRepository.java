@@ -50,6 +50,10 @@ public interface ParkingSpotRepository extends JpaRepository<ParkingSpot, UUID> 
                         WHERE r.unit_id = u.id
                           AND r.status IN ('PENDING_PAYMENT', 'PENDING_APPROVAL', 'CONFIRMED', 'IN_PROGRESS')
                           AND tstzrange(r.starts_at, r.blocked_until, '[)') && tstzrange(:start, :end, '[)'))
+                  AND NOT EXISTS (
+                        SELECT 1 FROM availability_exceptions e
+                        WHERE e.spot_id = s.id AND e.kind = 'BLOCKED' AND (e.unit_id IS NULL OR e.unit_id = u.id)
+                          AND tstzrange(e.starts_at, e.ends_at, '[)') && tstzrange(:start, :end, '[)'))
             ) f
             WHERE s.status = 'ACTIVE'
               AND ST_DWithin(s.location, CAST(ST_SetSRID(ST_MakePoint(:lng, :lat), 4326) AS geography), :radiusMeters)

@@ -49,10 +49,16 @@ public record SpotView(
         List<String> amenities,
         List<String> photoKeys,
         List<PhotoRef> photos,
-        List<UnitRef> units) {
+        List<UnitRef> units,
+        int totalUnits,
+        int occupiedUnits) {
 
     /** A bookable space of the listing (PARI-65): the id identifies it, the label is for display. */
-    public record UnitRef(UUID id, String label, int position) {
+    public record UnitRef(UUID id, String label, int position, boolean occupied) {
+
+        public UnitRef(UUID id, String label, int position) {
+            this(id, label, position, false);
+        }
     }
 
     /** A photo of the space with its stable id, in display order (position 0 is the cover). */
@@ -104,12 +110,14 @@ public record SpotView(
                 spot.getAmenities().stream().map(Amenity::getCode).sorted().toList(),
                 spot.getPhotos().stream().map(SpotPhoto::getStorageKey).toList(),
                 spot.getPhotos().stream().map(p -> new PhotoRef(p.getId(), p.getStorageKey(), p.getPosition())).toList(),
-                unitRefs(spot));
+                unitRefs(spot),
+                spot.liveUnits().size(),
+                spot.occupiedUnitCount());
     }
 
     static List<UnitRef> unitRefs(ParkingSpot spot) {
         List<SpotUnit> live = spot.liveUnits();
         return java.util.stream.IntStream.range(0, live.size())
-                .mapToObj(i -> new UnitRef(live.get(i).getId(), live.get(i).getLabel(), i + 1)).toList();
+                .mapToObj(i -> new UnitRef(live.get(i).getId(), live.get(i).getLabel(), i + 1, live.get(i).isOccupied())).toList();
     }
 }

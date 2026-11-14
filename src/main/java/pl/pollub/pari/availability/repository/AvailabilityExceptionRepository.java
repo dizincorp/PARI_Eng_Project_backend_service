@@ -32,5 +32,28 @@ public interface AvailabilityExceptionRepository extends JpaRepository<Availabil
                               @Param("start") Instant start,
                               @Param("end") Instant end);
 
+    /** A period of this kind that applies to the whole listing (no space named) and overlaps [start, end). */
+    @Query("""
+            select count(e) > 0 from AvailabilityException e
+            where e.spot.id = :spotId and e.kind = :kind and e.unit is null
+              and e.period.start < :end and e.period.end > :start
+            """)
+    boolean existsListingWideOverlapping(@Param("spotId") UUID spotId,
+                                         @Param("kind") ExceptionKind kind,
+                                         @Param("start") Instant start,
+                                         @Param("end") Instant end);
+
+    /** A period of this kind that closes the given space (its own or a listing-wide one) and overlaps [start, end). */
+    @Query("""
+            select count(e) > 0 from AvailabilityException e
+            where e.spot.id = :spotId and e.kind = :kind and (e.unit is null or e.unit.id = :unitId)
+              and e.period.start < :end and e.period.end > :start
+            """)
+    boolean existsOverlappingForUnit(@Param("spotId") UUID spotId,
+                                     @Param("kind") ExceptionKind kind,
+                                     @Param("unitId") UUID unitId,
+                                     @Param("start") Instant start,
+                                     @Param("end") Instant end);
+
     Optional<AvailabilityException> findByIdAndSpotId(UUID id, UUID spotId);
 }

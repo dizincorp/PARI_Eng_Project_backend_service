@@ -157,8 +157,9 @@ public class SpotController {
     /** Occupied intervals (reservations and blocked periods) overlapping [from, to). */
     @GetMapping("/{id}/booked-slots")
     public List<SpotCalendarService.BookedSlot> bookedSlots(@CurrentUserId UUID userId, @PathVariable UUID id,
-                                                            @RequestParam Instant from, @RequestParam Instant to) {
-        return calendar.bookedSlots(userId, id, from, to);
+                                                            @RequestParam Instant from, @RequestParam Instant to,
+                                                            @RequestParam(required = false) UUID unitId) {
+        return calendar.bookedSlots(userId, id, from, to, unitId);
     }
 
     @PostMapping("/{id}/activate")
