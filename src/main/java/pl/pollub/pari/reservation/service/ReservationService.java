@@ -26,6 +26,7 @@ import pl.pollub.pari.reservation.event.ReservationEvent;
 import pl.pollub.pari.spot.event.SpotOccupancyChanged;
 import pl.pollub.pari.reservation.repository.ReservationRepository;
 import pl.pollub.pari.spot.domain.ParkingSpot;
+import pl.pollub.pari.spot.domain.SpotUnit;
 import pl.pollub.pari.spot.repository.ParkingSpotRepository;
 import pl.pollub.pari.common.domain.Money;
 import pl.pollub.pari.user.domain.PaymentMethod;
@@ -60,7 +61,13 @@ public class ReservationService {
 
     /** What the driver sends when booking. {@code paymentMethodToken} is the provider's payment method id (Stripe pm_...). */
     public record BookCommand(UUID spotId, UUID vehicleId, Instant start, Instant end, String paymentMethodToken,
-                              BookingType bookingType, Integer durationMonths) {
+                              BookingType bookingType, Integer durationMonths, UUID unitId) {
+
+        /** A booking that does not name a space of the listing: the first free one is assigned (PARI-65). */
+        public BookCommand(UUID spotId, UUID vehicleId, Instant start, Instant end, String paymentMethodToken,
+                           BookingType bookingType, Integer durationMonths) {
+            this(spotId, vehicleId, start, end, paymentMethodToken, bookingType, durationMonths, null);
+        }
 
         /** An hourly booking. */
         public BookCommand(UUID spotId, UUID vehicleId, Instant start, Instant end, String paymentMethodToken) {
@@ -142,7 +149,8 @@ public class ReservationService {
         if (!driver.hasRole(Role.DRIVER)) {
             throw new ForbiddenException("The DRIVER role is required to book a parking space");
         }
-        ParkingSpot spot = spots.findById(cmd.spotId()).orElseThrow(() -> new NotFoundException("Parking spot not found"));
+        // the listing row is locked, so bookings of one listing are decided one at a time and a space is assigned safely
+        ParkingSpot spot = spots.findByIdForUpdate(cmd.spotId()).orElseThrow(() -> new NotFoundException("Parking spot not found"));
         if (!spot.isBookable() || spot.getOwner().isBlocked()) {
             throw new ConflictException("SPOT_NOT_BOOKABLE", "The parking spot is not available for reservations");
         }
@@ -160,10 +168,8 @@ public class ReservationService {
             throw new ConflictException("SPOT_NOT_AVAILABLE", "The owner does not offer this space at the requested time");
         }
         Duration buffer = Duration.ofMinutes(settings.integer("reservation_buffer_minutes"));
-        // the spot of an earlier reservation stays blocked for its buffer, so a new one may start only after that
-        if (reservations.existsOverlapping(spot.getId(), ReservationStatus.SLOT_HOLDING, period.start(), period.end().plus(buffer))) {
-            throw slotTaken();
-        }
+        // the space of an earlier reservation stays blocked for its buffer, so a new one may start only after that
+        SpotUnit unit = chooseUnit(spot, cmd.unitId(), period.start(), period.end().plus(buffer));
         throwIfVehicleBusy(vehicle.getId(), period);
 
         PricingService.Quote quote = pricing.quote(spot, period, cmd.bookingType(), cmd.durationMonths());
@@ -171,6 +177,7 @@ public class ReservationService {
                 quote.spotCost(), quote.serviceFee(), quote.commission(), quote.bookingType(), quote.durationDays(),
                 quote.durationMonths(), quote.baseCost(), quote.discountAmount());
         reservation.applyBuffer(buffer);
+        reservation.assignUnit(unit);
         try {
             reservations.saveAndFlush(reservation);
         } catch (DataIntegrityViolationException e) {
@@ -297,7 +304,7 @@ public class ReservationService {
             Instant now = clock.instant();
             Instant blocked = reservation.getBlockedUntil();
             if (blocked.isBefore(now.plus(buffer.dividedBy(2)))
-                    && !reservations.existsOverlapping(reservation.getSpot().getId(), ReservationStatus.SLOT_HOLDING,
+                    && !reservations.existsOverlappingOnUnit(reservation.getUnit().getId(), ReservationStatus.SLOT_HOLDING,
                     blocked, now.plus(buffer))) {
                 reservation.extendBlockUntil(now.plus(buffer));
             }
@@ -489,6 +496,24 @@ public class ReservationService {
                                     "conflictingStart", other.getPeriod().start(),
                                     "conflictingEnd", other.getPeriod().end()));
                 });
+    }
+
+    /**
+     * The space the booking holds (PARI-65): the one the driver named, or the first live space that is free for the whole
+     * range. 404 for a space that is not a live space of this listing, 409 when it (or every space) is taken.
+     */
+    private SpotUnit chooseUnit(ParkingSpot spot, UUID unitId, Instant start, Instant blockedUntil) {
+        if (unitId != null) {
+            SpotUnit unit = spot.liveUnits().stream().filter(u -> unitId.equals(u.getId())).findFirst()
+                    .orElseThrow(() -> new NotFoundException("Space not found"));
+            if (reservations.existsOverlappingOnUnit(unit.getId(), ReservationStatus.SLOT_HOLDING, start, blockedUntil)) {
+                throw slotTaken();
+            }
+            return unit;
+        }
+        return spot.liveUnits().stream()
+                .filter(u -> !reservations.existsOverlappingOnUnit(u.getId(), ReservationStatus.SLOT_HOLDING, start, blockedUntil))
+                .findFirst().orElseThrow(ReservationService::slotTaken);
     }
 
     private static ConflictException slotTaken() {

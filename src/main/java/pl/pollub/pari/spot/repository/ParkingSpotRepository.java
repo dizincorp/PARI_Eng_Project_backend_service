@@ -1,6 +1,8 @@
 package pl.pollub.pari.spot.repository;
 
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import pl.pollub.pari.spot.domain.ParkingSpot;
@@ -16,11 +18,18 @@ public interface ParkingSpotRepository extends JpaRepository<ParkingSpot, UUID> 
 
     Optional<ParkingSpot> findByIdAndOwnerId(UUID id, UUID ownerId);
 
-    /** One row of a map search: the spot id and its distance from the search point. */
+    /** The spot with its row locked until the transaction ends: bookings of one listing are decided one at a time (PARI-65). */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select s from ParkingSpot s where s.id = :id")
+    Optional<ParkingSpot> findByIdForUpdate(@Param("id") UUID id);
+
+    /** One row of a map search: the spot id, its distance from the search point and how many of its spaces are free. */
     interface SpotDistance {
         UUID getId();
 
         double getDistanceMeters();
+
+        long getFreeUnits();
     }
 
     /**
@@ -30,17 +39,23 @@ public interface ParkingSpotRepository extends JpaRepository<ParkingSpot, UUID> 
      */
     @Query(value = """
             SELECT s.id AS "id",
-                   ST_Distance(s.location, CAST(ST_SetSRID(ST_MakePoint(:lng, :lat), 4326) AS geography)) AS "distanceMeters"
+                   ST_Distance(s.location, CAST(ST_SetSRID(ST_MakePoint(:lng, :lat), 4326) AS geography)) AS "distanceMeters",
+                   f.n AS "freeUnits"
             FROM parking_spots s
+            CROSS JOIN LATERAL (
+                SELECT count(*) AS n FROM spot_units u
+                WHERE u.spot_id = s.id AND u.removed_at IS NULL
+                  AND NOT EXISTS (
+                        SELECT 1 FROM reservations r
+                        WHERE r.unit_id = u.id
+                          AND r.status IN ('PENDING_PAYMENT', 'PENDING_APPROVAL', 'CONFIRMED', 'IN_PROGRESS')
+                          AND tstzrange(r.starts_at, r.blocked_until, '[)') && tstzrange(:start, :end, '[)'))
+            ) f
             WHERE s.status = 'ACTIVE'
               AND ST_DWithin(s.location, CAST(ST_SetSRID(ST_MakePoint(:lng, :lat), 4326) AS geography), :radiusMeters)
               AND s.hourly_price_minor <= :maxPriceMinor
               AND (s.is_verified OR NOT :onlyVerified)
-              AND NOT EXISTS (
-                    SELECT 1 FROM reservations r
-                    WHERE r.spot_id = s.id
-                      AND r.status IN ('PENDING_PAYMENT', 'PENDING_APPROVAL', 'CONFIRMED', 'IN_PROGRESS')
-                      AND tstzrange(r.starts_at, r.blocked_until, '[)') && tstzrange(:start, :end, '[)'))
+              AND f.n > 0
             ORDER BY CASE WHEN EXISTS (
                            SELECT 1 FROM premium_subscriptions p
                            WHERE p.owner_id = s.owner_id AND p.status IN ('ACTIVE', 'CANCELLED') AND p.expires_at > now())
