@@ -15,6 +15,7 @@ import pl.pollub.pari.reservation.service.PricingService;
 import pl.pollub.pari.reservation.service.ReservationExpiryService;
 import pl.pollub.pari.reservation.service.ReservationService;
 import pl.pollub.pari.spot.service.SpotSearchService;
+import pl.pollub.pari.spot.service.SpotCalendarService;
 import pl.pollub.pari.spot.service.SpotService;
 import pl.pollub.pari.spot.service.SpotUnitService;
 
@@ -29,7 +30,7 @@ import java.time.ZoneOffset;
  */
 @Import({PostgresTestConfig.class, EncryptedStringConverter.class,
         ReservationService.class, PricingService.class, AvailabilityService.class, PaymentService.class,
-        MockPaymentGateway.class, PlatformSettings.class, AuditTrail.class, SpotService.class, SpotUnitService.class, SpotSearchService.class,
+        MockPaymentGateway.class, PlatformSettings.class, AuditTrail.class, SpotService.class, SpotUnitService.class, SpotSearchService.class, SpotCalendarService.class,
         ServiceTestBase.FixedTime.class, NotificationEventListener.class, ReservationExpiryService.class,
         NotificationService.class})
 public abstract class ServiceTestBase extends DbTestBase {

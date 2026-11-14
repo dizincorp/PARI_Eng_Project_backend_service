@@ -142,6 +142,7 @@ PARI backend API version 0.0.1. Parking space rental portal. Authenticate with a
 | `id` | path | string (uuid) | yes |  |
 | `from` | query | string (date-time) | yes |  |
 | `to` | query | string (date-time) | yes |  |
+| `unitId` | query | string (uuid) | no | only this space: its reservations, its own blocks and the listing-wide closures (PARI-65); 404 for an unknown space |
 
 ## auth-controller
 
@@ -192,6 +193,8 @@ PARI backend API version 0.0.1. Parking space rental portal. Authenticate with a
 | `category` | query | `SPOT_PHOTO` \| `AVATAR` | yes |  |
 
 **Bookable spaces in one listing (PARI-65, ADR 0006, part 1 of 3).** A listing is one or more numbered spaces ("units") at the same address. The shared data (address, photos, description, prices, gate PIN, access instructions) stays on the listing; a unit has an `id` (the identifier) and a `label` (display only, `#1`, `#2`, ..., 1 to 20 characters, unique among the live spaces of the listing, case-insensitive). Every listing, also the existing ones, has at least `#1`. `POST /api/spots` accepts `unitCount` (1 to `max_units_per_spot`, default 1) and creates `#1` to `#n`. `GET /api/spots/{id}/units` lists the live spaces with their ids (also `SpotView.units`); `POST` adds one (without a label the next free `#n`), `PUT` renames, `DELETE` removes one; each returns the live spaces afterwards. Errors: `409 SPOT_UNIT_LABEL_TAKEN`, `409 SPOT_UNIT_LIMIT` (the limit is the placeholder setting `max_units_per_spot` = 50), `409 SPOT_UNIT_LAST` (the last space cannot be removed, archive the listing instead), `409 SPOT_UNIT_HAS_RESERVATIONS` (a reservation still holds the space, `details.label`), `400` for a bad label or a bad `unitCount`, `404` for an unknown space, `403` for anyone but the owner or an ADMIN. A removed space is kept, so old reservations keep their unit and the label they had. The database now guarantees no overlap per space (`reservations_no_overlap` is keyed on `unit_id`). **Booking (part 2 of 3).** `POST /api/reservations` takes an optional `unitId`. Without it the first live space that is free for the whole range (including the unpaid buffer) is assigned; the listing row is locked while booking, so concurrent requests are decided one at a time, and the exclusion constraint stays the final guard. Different spaces of one listing can be booked for the same time, one space cannot. `ReservationView` returns `unitId` and `unitLabel`. Map search returns a listing while at least one space is free and reports `freeUnits`. **Not available yet** (the third pull request): per-space blocks and the parent-wide closure, the owner calendar, occupancy per space, and the label in notifications, support views and receipts. Until then a blocked period still applies to the whole listing.
+
+**Blocks, calendar, occupancy and labels (part 3 of 3).** A blocked period (`POST .../blocked-periods` or `.../calendar/blocks`) takes an optional `unitId`: with it only that space is closed, without it every space is (a listing-wide closure). A space block is refused (409 `PERIOD_HAS_RESERVATIONS`) only when that space has a reservation in the period, a listing-wide closure when any space has. Booking skips blocked spaces; a named space that is blocked gives 409 `SPOT_NOT_AVAILABLE`. Weekly rules and extra open periods stay at listing level. Search counts only the spaces that are neither booked nor blocked. `GET /api/spots/{id}/booked-slots` names the space of each reservation and block (`unitId`, `unitLabel`) and accepts `?unitId=`. **Occupancy** (check-in and check-out) now belongs to the space: `SpotView.occupancy` is `OCCUPIED` only when every live space is, and `occupiedUnits` / `totalUnits` give the counts. The SSE `occupancy` event adds `unitId`, `unitLabel`, `occupiedUnits` and `totalUnits` to the listing-level `occupancy`. **Labels:** `unitId` and `unitLabel` are in `ReservationView`, the support reservation context (`SupportReservationView`) and the booked-slots calendar; notifications carry `unitLabel` in their payload, and their text names the space (`"Garage" (#2)`) for a listing with more than one space. There is no separate receipt document: the reservation (`ReservationView`) with its price breakdown is the receipt, and it carries the label that was valid when it was booked.
 
 **Photo management (PARI-64).** `GET /api/spots/{id}/photos` lists the photos with their stable ids, `position` (0 is the cover) and public `url`; it follows the visibility of the space (an inactive space is visible to its owner only). The same photos are in `SpotView.photos` (`id`, `storageKey`, `position`); `photoKeys` is kept for existing clients. `PUT .../photos/cover` uploads a new image, makes it the cover and removes the previous cover's record and file; the other photos keep their order. On a space without photos it simply adds one. `PUT .../photos/order` takes the ids of every photo of the space exactly once, in the wanted order (the first becomes the cover); a missing, repeated or unknown id gives `400` and changes nothing. Deleting a photo renumbers the rest. Add, replace, reorder and delete are for the owner or an `ADMIN` (`403` for anyone else, `404` for an unknown or archived space, and no file is written for a refused upload). A file whose database update fails is removed again, so a replaced or deleted photo leaves no record and no file behind. Not done: reordering by moving a single photo, and cleaning up files that were stored through `/api/media/upload` and never attached.
 
@@ -397,6 +400,7 @@ PARI backend API version 0.0.1. Parking space rental portal. Authenticate with a
 | `start` | string (date-time) | yes |  |
 | `end` | string (date-time) | yes |  |
 | `reason` | string | no |  |
+| `unitId` | string (uuid) | no | one space of the listing (PARI-65); absent closes every space. 404 for a space that is not a live space of this listing |
 
 ### BlockedPeriodResponse
 
@@ -406,6 +410,8 @@ PARI backend API version 0.0.1. Parking space rental portal. Authenticate with a
 | `start` | string (date-time) | no |  |
 | `end` | string (date-time) | no |  |
 | `reason` | string | no |  |
+| `unitId` | string (uuid) | no | the space the block applies to; null for a closure of the whole listing (PARI-65) |
+| `unitLabel` | string | no | its label; null for a closure of the whole listing |
 
 ### BookRequest
 
@@ -429,6 +435,8 @@ PARI backend API version 0.0.1. Parking space rental portal. Authenticate with a
 | `start` | string (date-time) | no |  |
 | `end` | string (date-time) | no |  |
 | `status` | string | no |  |
+| `unitId` | string (uuid) | no | the space the reservation or block belongs to; null for a closure of the whole listing (PARI-65) |
+| `unitLabel` | string | no | the label of that space (for a reservation, as it was when booked) |
 
 ### ChangePasswordRequest
 
@@ -717,7 +725,7 @@ PARI backend API version 0.0.1. Parking space rental portal. Authenticate with a
 | `ownerGatePin` | string | no | owner only; null for everyone else |
 | `autoAccept` | boolean | no |  |
 | `realtimeStatusEnabled` | boolean | no |  |
-| `occupancy` | `FREE` \| `OCCUPIED` | no |  |
+| `occupancy` | `FREE` \| `OCCUPIED` | no | `OCCUPIED` only when every live space of the listing is occupied (PARI-65) |
 | `status` | `DRAFT` \| `ACTIVE` \| `INACTIVE` \| `BLOCKED` \| `ARCHIVED` | no |  |
 | `verified` | boolean | no |  |
 | `avgRating` | number | no |  |
@@ -725,7 +733,9 @@ PARI backend API version 0.0.1. Parking space rental portal. Authenticate with a
 | `amenities` | array of string | no |  |
 | `photoKeys` | array of string | no |  |
 | `photos` | array of object | no | `id`, `storageKey`, `position` of each photo, cover first (PARI-64) |
-| `units` | array of object | no | the live bookable spaces: `id`, `label`, `position` (PARI-65) |
+| `units` | array of object | no | the live bookable spaces: `id`, `label`, `position`, `occupied` (PARI-65) |
+| `totalUnits` | integer (int32) | no | number of live spaces |
+| `occupiedUnits` | integer (int32) | no | how many of them are occupied now |
 
 ### SseEmitter
 
@@ -939,7 +949,7 @@ A booking whose payment is declined answers `402`, and the reservation is stored
 - **Map search** (`GET /api/spots`): `lat`, `lng` are required, `radiusMeters` defaults to 5000 and is at most 50000, optional `maxPrice`, `onlyVerified`, `start` + `end` (both or none). Premium owners come first, then by distance. Without `lat` and `lng` the answer is `400`.
 - **Rental types**: `bookingType` is `HOURLY` (start and end), `DAILY` (whole days) or `MONTHLY` (start and `durationMonths`, 1 to 36, with a discount from 3 months on).
 - **Uploads**: `multipart/form-data`, field `file` (and `category` for `POST /api/media/upload`), JPEG, PNG or WebP (the type is detected from the bytes, not from the name), at most 5 MB. The answer holds the public URL `<PARI_PUBLIC_BASE_URL>/media/<key>`.
-- **Live occupancy** (`GET /api/spots/events`): Server-Sent Events. The event name is `occupancy` and the data is `{ "spotId": "...", "occupancy": "FREE" | "OCCUPIED", "at": "..." }`. A client must listen with `addEventListener("occupancy", ...)`; `onmessage` does not receive named events.
+- **Live occupancy** (`GET /api/spots/events`): Server-Sent Events. The event name is `occupancy` and the data is `{ "spotId": "...", "occupancy": "FREE" | "OCCUPIED", "at": "...", "unitId": "...", "unitLabel": "#2", "occupiedUnits": 1, "totalUnits": 2 }` (`occupancy` is the state of the whole listing; the unit fields name the space that changed). A client must listen with `addEventListener("occupancy", ...)`; `onmessage` does not receive named events.
 - **Aliases**: `GET /api/owner/payouts/history` is also served as `/withdrawals`; blocked periods as `/api/spots/{id}/blocked-periods` and `/api/spots/{id}/calendar/blocks`.
 
 ### Not implemented yet

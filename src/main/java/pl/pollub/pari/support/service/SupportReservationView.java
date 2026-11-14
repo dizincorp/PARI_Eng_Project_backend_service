@@ -24,6 +24,8 @@ public record SupportReservationView(
         ReservationStatus status,
         BookingType bookingType,
         Spot spot,
+        UUID unitId,
+        String unitLabel,
         Instant startsAt,
         Instant endsAt,
         Instant blockedUntil,
@@ -81,6 +83,7 @@ public record SupportReservationView(
                 r.getFinalCost() == null ? null : r.getFinalCost().toDecimal(), r.getTotal().currency(), r.getCancelReason());
         return new SupportReservationView(r.getId(), r.getCode(), r.getStatus(), r.getBookingType(),
                 new Spot(r.getSpot().getId(), r.getSpot().getName(), a.street(), a.city(), a.postalCode(), a.country()),
+                r.getUnit().getId(), r.getUnitLabel(),
                 r.getPeriod().start(), r.getPeriod().end(), r.getBlockedUntil(), timezone,
                 r.getVehicle().getPlateNumber(), r.getVehicle().getModel(), Party.of(r.getDriver()),
                 Party.of(r.getSpot().getOwner()), lifecycle,

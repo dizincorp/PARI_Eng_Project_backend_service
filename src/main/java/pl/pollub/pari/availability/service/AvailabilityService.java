@@ -13,6 +13,7 @@ import pl.pollub.pari.common.exception.NotFoundException;
 import pl.pollub.pari.reservation.domain.ReservationStatus;
 import pl.pollub.pari.reservation.repository.ReservationRepository;
 import pl.pollub.pari.spot.domain.ParkingSpot;
+import pl.pollub.pari.spot.domain.SpotUnit;
 import pl.pollub.pari.spot.repository.ParkingSpotRepository;
 
 import java.time.Instant;
@@ -57,7 +58,8 @@ public class AvailabilityService {
     @Transactional(readOnly = true)
     public boolean isAvailable(ParkingSpot spot, TimeRange range) {
         UUID spotId = spot.getId();
-        if (exceptions.existsOverlapping(spotId, ExceptionKind.BLOCKED, range.start(), range.end())) {
+        // a block of one space is checked per space when booking (isUnitBlocked), a listing-wide one closes everything here
+        if (exceptions.existsListingWideOverlapping(spotId, ExceptionKind.BLOCKED, range.start(), range.end())) {
             return false;
         }
         List<AvailabilityRule> weekly = rules.findBySpotIdOrderByDayOfWeekAscStartTimeAsc(spotId);
@@ -76,6 +78,12 @@ public class AvailabilityService {
             }
         }
         return true;
+    }
+
+    /** True when the owner blocked this space, or the whole listing, inside the range (PARI-65). */
+    @Transactional(readOnly = true)
+    public boolean isUnitBlocked(UUID spotId, UUID unitId, TimeRange range) {
+        return exceptions.existsOverlappingForUnit(spotId, ExceptionKind.BLOCKED, unitId, range.start(), range.end());
     }
 
     /** Replaces the whole weekly schedule. An empty list means "open all the time". */
@@ -100,11 +108,28 @@ public class AvailabilityService {
     /** "Zablokuj termin": the owner blocks a period. Refused while a reservation still holds a slot inside it. */
     @Transactional
     public AvailabilityException blockPeriod(UUID ownerId, UUID spotId, TimeRange period, String reason) {
+        return blockPeriod(ownerId, spotId, period, reason, null);
+    }
+
+    /**
+     * Blocks a period of one space ({@code unitId}) or of the whole listing ({@code unitId == null}, a closure of every
+     * space). Refused while a reservation of the space (or, for a closure, of any space) still holds a slot inside it.
+     */
+    @Transactional
+    public AvailabilityException blockPeriod(UUID ownerId, UUID spotId, TimeRange period, String reason, UUID unitId) {
         ParkingSpot spot = ownedSpot(ownerId, spotId);
-        if (reservations.existsOverlapping(spotId, ReservationStatus.SLOT_HOLDING, period.start(), period.end())) {
+        if (unitId == null) {
+            if (reservations.existsOverlapping(spotId, ReservationStatus.SLOT_HOLDING, period.start(), period.end())) {
+                throw new ConflictException("PERIOD_HAS_RESERVATIONS", "A reservation already exists in this period");
+            }
+            return exceptions.save(new AvailabilityException(spot, period, ExceptionKind.BLOCKED, reason));
+        }
+        SpotUnit unit = spot.liveUnits().stream().filter(u -> unitId.equals(u.getId())).findFirst()
+                .orElseThrow(() -> new NotFoundException("Space not found"));
+        if (reservations.existsOverlappingOnUnit(unitId, ReservationStatus.SLOT_HOLDING, period.start(), period.end())) {
             throw new ConflictException("PERIOD_HAS_RESERVATIONS", "A reservation already exists in this period");
         }
-        return exceptions.save(new AvailabilityException(spot, period, ExceptionKind.BLOCKED, reason));
+        return exceptions.save(new AvailabilityException(spot, unit, period, reason));
     }
 
     @Transactional

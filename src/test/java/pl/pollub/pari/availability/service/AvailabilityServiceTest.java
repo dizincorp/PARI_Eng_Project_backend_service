@@ -47,7 +47,7 @@ class AvailabilityServiceTest {
 
     @Test
     void aBlockedPeriodInsideTheRangeAlwaysWins() {
-        when(exceptions.existsOverlapping(any(), eq(ExceptionKind.BLOCKED), any(), any())).thenReturn(true);
+        when(exceptions.existsListingWideOverlapping(any(), eq(ExceptionKind.BLOCKED), any(), any())).thenReturn(true);
         when(rules.findBySpotIdOrderByDayOfWeekAscStartTimeAsc(any())).thenReturn(List.of());
 
         assertThat(availability.isAvailable(spot, range("2030-01-07T10:00:00Z", "2030-01-07T12:00:00Z"))).isFalse();

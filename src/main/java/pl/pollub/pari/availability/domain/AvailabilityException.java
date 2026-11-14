@@ -13,6 +13,7 @@ import lombok.Getter;
 import pl.pollub.pari.common.domain.BaseEntity;
 import pl.pollub.pari.common.domain.TimeRange;
 import pl.pollub.pari.spot.domain.ParkingSpot;
+import pl.pollub.pari.spot.domain.SpotUnit;
 
 /** One-off change to the weekly rules: a blocked period ("Zablokuj termin") or an extra open period. */
 @Entity
@@ -33,7 +34,18 @@ public class AvailabilityException extends BaseEntity {
 
     private String reason;
 
+    /** The space a blocked period applies to (PARI-65); null means every space of the listing. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "unit_id")
+    private SpotUnit unit;
+
     protected AvailabilityException() {
+    }
+
+    /** A blocked period of one space. */
+    public AvailabilityException(ParkingSpot spot, SpotUnit unit, TimeRange period, String reason) {
+        this(spot, period, ExceptionKind.BLOCKED, reason);
+        this.unit = unit;
     }
 
     public AvailabilityException(ParkingSpot spot, TimeRange period, ExceptionKind kind, String reason) {

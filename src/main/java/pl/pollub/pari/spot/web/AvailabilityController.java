@@ -50,13 +50,17 @@ public class AvailabilityController {
     }
 
     /** {@code startsAt} and {@code endsAt} are accepted as names too (calendar API). */
-    public record BlockRequest(@NotNull @JsonAlias("startsAt") Instant start, @NotNull @JsonAlias("endsAt") Instant end, String reason) {
+    public record BlockRequest(@NotNull @JsonAlias("startsAt") Instant start, @NotNull @JsonAlias("endsAt") Instant end, String reason,
+                               /** One space of the listing (PARI-65); absent closes every space. */
+                               UUID unitId) {
     }
 
-    public record BlockedPeriodResponse(UUID id, Instant start, Instant end, String reason) {
+    /** {@code unitId} and {@code unitLabel} are null for a closure of the whole listing. */
+    public record BlockedPeriodResponse(UUID id, Instant start, Instant end, String reason, UUID unitId, String unitLabel) {
 
         static BlockedPeriodResponse of(AvailabilityException e) {
-            return new BlockedPeriodResponse(e.getId(), e.getPeriod().start(), e.getPeriod().end(), e.getReason());
+            return new BlockedPeriodResponse(e.getId(), e.getPeriod().start(), e.getPeriod().end(), e.getReason(),
+                    e.getUnit() == null ? null : e.getUnit().getId(), e.getUnit() == null ? null : e.getUnit().getLabel());
         }
     }
 
@@ -88,7 +92,7 @@ public class AvailabilityController {
     @ResponseStatus(HttpStatus.CREATED)
     public BlockedPeriodResponse block(@CurrentUserId UUID userId,
                                        @PathVariable UUID spotId, @Valid @RequestBody BlockRequest r) {
-        return BlockedPeriodResponse.of(availability.blockPeriod(userId, spotId, new TimeRange(r.start(), r.end()), r.reason()));
+        return BlockedPeriodResponse.of(availability.blockPeriod(userId, spotId, new TimeRange(r.start(), r.end()), r.reason(), r.unitId()));
     }
 
     @DeleteMapping({"/blocked-periods/{periodId}", "/calendar/blocks/{periodId}"})
