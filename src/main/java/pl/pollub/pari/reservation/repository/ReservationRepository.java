@@ -31,6 +31,17 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID>,
 
     boolean existsByVehicleIdAndStatusIn(UUID vehicleId, Collection<ReservationStatus> statuses);
 
+    /** True when a slot-holding reservation of this space (unit) overlaps [start, end), counting the buffer (PARI-65). */
+    @Query("""
+            select count(r) > 0 from Reservation r
+            where r.unit.id = :unitId and r.status in :statuses
+              and r.period.start < :end and r.blockedUntil > :start
+            """)
+    boolean existsOverlappingOnUnit(@Param("unitId") UUID unitId,
+                                    @Param("statuses") Collection<ReservationStatus> statuses,
+                                    @Param("start") Instant start,
+                                    @Param("end") Instant end);
+
     /** True when a slot-holding reservation of the spot overlaps [start, end), counting the buffer after its end (PARI-69). */
     @Query("""
             select count(r) > 0 from Reservation r

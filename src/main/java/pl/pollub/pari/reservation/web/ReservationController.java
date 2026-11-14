@@ -55,7 +55,9 @@ public class ReservationController {
 
     /** {@code paymentMethodToken} is the provider's payment method id. With the mock gateway use pm_card_visa; pm_card_chargeDeclined is declined. */
     public record BookRequest(@NotNull UUID spotId, @NotNull UUID vehicleId, @NotNull Instant start, Instant end,
-                              @NotBlank String paymentMethodToken, BookingType bookingType, Integer durationMonths) {
+                              @NotBlank String paymentMethodToken, BookingType bookingType, Integer durationMonths,
+                              /** The space of the listing to hold (PARI-65); absent means the first free one. */
+                              UUID unitId) {
     }
 
     public record ReasonRequest(String reason) {
@@ -82,7 +84,7 @@ public class ReservationController {
     public ReservationView book(@CurrentUserId UUID userId, @Valid @RequestBody BookRequest r) {
         ReservationService.BookingResult result = reservations.book(userId,
                 new ReservationService.BookCommand(r.spotId(), r.vehicleId(), r.start(), r.end(), r.paymentMethodToken(),
-                        r.bookingType() == null ? BookingType.HOURLY : r.bookingType(), r.durationMonths()));
+                        r.bookingType() == null ? BookingType.HOURLY : r.bookingType(), r.durationMonths(), r.unitId()));
         if (result.paymentFailed()) {
             throw new PaymentFailedException(result.paymentFailureReason());
         }

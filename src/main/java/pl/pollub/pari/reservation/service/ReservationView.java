@@ -59,7 +59,9 @@ public record ReservationView(
         BigDecimal finalCost,
         Instant blockedUntil,
         boolean autoCheckedOut,
-        boolean penaltyPending) {
+        boolean penaltyPending,
+        UUID unitId,
+        String unitLabel) {
 
     public static ReservationView of(Reservation r, UUID viewerId) {
         User owner = r.getSpot().getOwner();
@@ -109,6 +111,8 @@ public record ReservationView(
                 r.getFinalCost() == null ? null : r.getFinalCost().toDecimal(),
                 r.getBlockedUntil(),
                 r.isAutoCheckedOut(),
-                r.isPenaltyPending());
+                r.isPenaltyPending(),
+                r.getUnit().getId(),
+                r.getUnitLabel());
     }
 }

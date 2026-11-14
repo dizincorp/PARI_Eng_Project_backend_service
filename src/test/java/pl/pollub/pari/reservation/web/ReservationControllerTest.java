@@ -174,7 +174,7 @@ class ReservationControllerTest {
                 new BigDecimal("10.00"), new BigDecimal("20.00"), new BigDecimal("2.50"), new BigDecimal("22.50"), "PLN",
                 pl.pollub.pari.reservation.domain.BookingType.HOURLY, null, null, new BigDecimal("20.00"), new BigDecimal("0.00"),
                 status == ReservationStatus.CONFIRMED ? "4921" : null, null, null, null, null, Instant.parse("2029-12-01T00:00:00Z"), null, null, null, null,
-                Instant.parse("2030-01-07T13:00:00Z"), false, false);
+                Instant.parse("2030-01-07T13:00:00Z"), false, false, UUID.randomUUID(), "#1");
     }
 
     @TestConfiguration

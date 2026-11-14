@@ -29,7 +29,7 @@ public class SpotSearchService {
     }
 
     /** A found space with its distance from the search point. */
-    public record SearchHit(SpotView spot, double distanceMeters) {
+    public record SearchHit(SpotView spot, double distanceMeters, long freeUnits) {
     }
 
     private final ParkingSpotRepository spots;
@@ -80,7 +80,7 @@ public class SpotSearchService {
 
         return candidates.stream()
                 .filter(d -> range == null || availability.isAvailable(byId.get(d.getId()), range))
-                .map(d -> new SearchHit(SpotView.of(byId.get(d.getId()), viewerId), d.getDistanceMeters()))
+                .map(d -> new SearchHit(SpotView.of(byId.get(d.getId()), viewerId), d.getDistanceMeters(), d.getFreeUnits()))
                 .toList();
     }
 }
