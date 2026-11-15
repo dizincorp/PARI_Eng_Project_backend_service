@@ -54,6 +54,10 @@ The variant is decided by the Flyway locations: the migrations in `db/migration`
 - All amounts follow `PricingService` and `platform_settings`, and `DemoDataTest` checks the consistency (money, payment and payout states, ratings, verification, occupancy). Times are relative to the day the database is created. The request waiting for the owner expires like any other after `approval_timeout_minutes`.
 - Not seeded: phone numbers, withdrawals (both are encrypted with the application key) and spot photos (they need files in the media directory).
 
+### Scenario seed (Java, relative to now)
+
+For a Lublin data set with drivers, owners, an ADMIN and a SUPPORT account, listings (one with three spaces), blocks, reservations in every state, an overdue session ended by the real auto-check-out, and support tickets, start a **clean** database and run `SPRING_PROFILES_ACTIVE=local,scenario-seed ./gradlew bootRun`. It is idempotent, only runs on `local` or `test` against a database on this machine, and is documented in [docs/seed-data.md](docs/seed-data.md) (accounts, scenarios, passwords, how to switch it off).
+
 Secrets come from environment variables: `PARI_DATA_KEY` (data encryption) and `PARI_JWT_SECRET` (token signing), each the base64 of at least 32 random bytes; the application refuses to start without them. The `local` profile contains development-only values for both, and also accepts the legacy `X-User-Id` header (`pari.security.jwt.dev-header-auth`) so scripts keep working; never enable that outside development.
 
 **Development staff accounts (ADMIN and SUPPORT).** Public registration never grants staff roles. To try the support workflows on a clean database, start the app with the `local` profile and set the passwords in your environment (no defaults exist, nothing is committed):
