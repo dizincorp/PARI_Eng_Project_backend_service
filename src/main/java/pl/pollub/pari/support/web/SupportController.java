@@ -64,6 +64,10 @@ public class SupportController {
                                            @NotBlank @jakarta.validation.constraints.Size(max = 100) String operationId) {
     }
 
+    public record RefundOverstayPenaltyRequest(@NotBlank String reason,
+                                               @NotBlank @jakarta.validation.constraints.Size(max = 100) String operationId) {
+    }
+
     public record NoteRequest(@NotBlank String body, boolean internalNote) {
     }
 
@@ -156,6 +160,17 @@ public class SupportController {
     @PostMapping("/tickets/{id}/commands/settle-penalty")
     public TicketView settlePenalty(@CurrentUserId UUID userId, @PathVariable UUID id, @Valid @RequestBody SettlePenaltyRequest r) {
         return commands.settlePenalty(userId, id, r.waive(), r.reason());
+    }
+
+    /**
+     * Refunds an automatic overstay penalty that was already charged (PARI-100), in full, and returns the updated ticket with
+     * {@code overstayPenalty}. {@code operationId} is the idempotency key. 409 OVERSTAY_PENALTY_NOT_CHARGED (details.state),
+     * 409 OVERSTAY_PENALTY_ALREADY_REFUNDED, 402 PAYMENT_FAILED.
+     */
+    @PostMapping("/tickets/{id}/commands/refund-overstay-penalty")
+    public TicketView refundOverstayPenalty(@CurrentUserId UUID userId, @PathVariable UUID id,
+                                            @Valid @RequestBody RefundOverstayPenaltyRequest r) {
+        return commands.refundOverstayPenalty(userId, id, r.reason(), r.operationId());
     }
 
     @PostMapping("/tickets/{id}/commands/cancel-with-refund")

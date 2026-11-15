@@ -19,6 +19,7 @@ import pl.pollub.pari.common.domain.IllegalStateTransitionException;
 import pl.pollub.pari.common.domain.Money;
 import pl.pollub.pari.common.domain.TimeRange;
 import pl.pollub.pari.common.security.EncryptedStringConverter;
+import pl.pollub.pari.payment.domain.Payment;
 import pl.pollub.pari.spot.domain.ParkingSpot;
 import pl.pollub.pari.spot.domain.SpotUnit;
 import pl.pollub.pari.support.domain.EvacuationFee;
@@ -161,6 +162,21 @@ public class Reservation extends BaseEntity {
     @OrderBy("createdAt ASC")
     private List<PenaltyAssessment> supportPenalties = new ArrayList<>();
 
+    /** The money movements of this reservation, oldest first. Read only: payments are written through the payment module. */
+    @OneToMany(mappedBy = "reservation")
+    @OrderBy("createdAt ASC")
+    private List<Payment> payments = new ArrayList<>();
+
+    /** The REFUND that returned the automatic overstay penalty to the driver (PARI-100); null while it was not refunded. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "overstay_refund_payment_id")
+    private Payment overstayRefundPayment;
+
+    private Instant overstayRefundedAt;
+
+    /** Idempotency key of the refund command: the same key again changes nothing. */
+    private String overstayRefundOperationKey;
+
     /** Bit mask of the session reminders already sent, see {@link #REMINDER_BEFORE_END}. */
     private int remindersSent;
 
@@ -265,6 +281,24 @@ public class Reservation extends BaseEntity {
             this.overstayPenalty = Money.ZERO;
             this.finalCost = spotCost;
         }
+    }
+
+    /**
+     * Remembers that the charged overstay penalty was refunded (PARI-100). The billed amounts ({@code overstayPenalty},
+     * {@code finalCost}) do not change: they say what was billed, the refund is recorded next to them. Only once.
+     */
+    public void recordOverstayRefund(Payment refund, String operationKey, Instant now) {
+        if (overstayRefundPayment != null) {
+            throw new IllegalStateTransitionException("The overstay penalty of this reservation was already refunded");
+        }
+        this.overstayRefundPayment = refund;
+        this.overstayRefundedAt = now;
+        this.overstayRefundOperationKey = operationKey;
+    }
+
+    /** True when the automatic overstay penalty was refunded by support. */
+    public boolean isOverstayPenaltyRefunded() {
+        return overstayRefundPayment != null;
     }
 
     /** Support corrects a wrongly assigned no-show: the reservation is cancelled (the service refunds the driver). */

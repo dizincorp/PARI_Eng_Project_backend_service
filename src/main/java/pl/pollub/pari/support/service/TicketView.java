@@ -16,14 +16,16 @@ import java.util.UUID;
  * Read model of a support ticket. Internal notes are included only when the viewer is support. {@code penalties} and
  * {@code evacuationFees} are the itemized support charges of the ticket's reservation (PARI-87, PARI-88), with the totals
  * {@code penaltyTotal} (collected support penalties) and {@code evacuationFeeTotal} (charged fees minus refunds). The
- * {@code evacuationFee} field is only the fee planned for this ticket's evacuation.
+ * {@code evacuationFee} field is only the fee planned for this ticket's evacuation. {@code overstayPenalty} is the
+ * automatic overstay penalty of the reservation and its refund state (PARI-100).
  */
 public record TicketView(UUID id, TicketType type, TicketSource source, TicketPriority priority, ReportStatus status,
                          UUID reservationId, String reservationCode, UUID reporterId, UUID assignedToId, String description,
                          String resolution, EvacuationStatus evacuationStatus, String evacuationDestination,
                          BigDecimal evacuationFee, Instant createdAt, Instant closedAt, List<MessageView> messages,
                          List<SupportCharges.PenaltyItem> penalties, BigDecimal penaltyTotal,
-                         List<SupportCharges.FeeItem> evacuationFees, BigDecimal evacuationFeeTotal) {
+                         List<SupportCharges.FeeItem> evacuationFees, BigDecimal evacuationFeeTotal,
+                         OverstayPenaltyView overstayPenalty) {
 
     public record MessageView(UUID id, UUID authorId, String body, boolean internalNote, Instant createdAt) {
     }
@@ -40,6 +42,7 @@ public record TicketView(UUID id, TicketType type, TicketSource source, TicketPr
                 t.getEvacuationStatus(), t.getEvacuationDestination(),
                 t.getEvacuationFee() == null ? null : t.getEvacuationFee().toDecimal(), t.getCreatedAt(), t.getClosedAt(), messages,
                 SupportCharges.penalties(t.getReservation()), SupportCharges.penaltyTotal(t.getReservation()),
-                SupportCharges.fees(t.getReservation()), SupportCharges.evacuationFeeTotal(t.getReservation()));
+                SupportCharges.fees(t.getReservation()), SupportCharges.evacuationFeeTotal(t.getReservation()),
+                OverstayPenaltyView.of(t.getReservation()));
     }
 }

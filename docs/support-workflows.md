@@ -92,6 +92,7 @@ Fee payments, amounts and totals (this is why a command can succeed while the pa
 | Hold | When a `CANNOT_LEAVE` ticket is open at check-out the penalty is **held** (`penaltyPending = true`) and nothing is charged. Support decides with `settle-penalty` (`waive` true or false). While it is held the ticket cannot be closed (`409 PENALTY_PENDING`). |
 | Waive | `settle-penalty` with `waive: true` zeroes the overstay penalty and sets `finalCost` back to the parking price. It applies to this flow only. |
 | Duplicates | One overstay penalty per reservation (it is set once by the check-out). |
+| Refund (PARI-100) | A **charged** overstay penalty is returned in full with `POST /api/support/tickets/{id}/commands/refund-overstay-penalty` (see 3.3). |
 
 ### 3.2 Penalty assessed by support (PARI-87)
 
@@ -102,7 +103,7 @@ Fee payments, amounts and totals (this is why a command can succeed while the pa
 | Reservation state | `IN_PROGRESS`, `COMPLETED` or `NO_SHOW`; otherwise `409 PENALTY_RESERVATION_NOT_ELIGIBLE`. It stays possible after completion. |
 | Duplicates | The same `operationId` on the same ticket returns the ticket unchanged. A different `operationId` creates another penalty: there is no limit on how many and **no upper limit on the amount**. |
 | Lifecycle | `PENDING` -> `CHARGED` (payment succeeded), `FAILED` (payment refused or no payment method) or `WAIVED`. Only `PENDING` can change (`409 INVALID_STATE`). Assessing collects nothing. |
-| Charge / waive | `POST .../penalties/{penaltyId}/charge` and `.../waive` (`reason`). `FAILED` is final: assess a new penalty to try again. There is **no refund** of a `CHARGED` penalty (*not implemented*). |
+| Charge / waive | `POST .../penalties/{penaltyId}/charge` and `.../waive` (`reason`). `FAILED` is final: assess a new penalty to try again. There is **no refund** of a `CHARGED` assessed penalty (*not implemented*); `refund-overstay-penalty` does not touch it. |
 | Totals | `penaltyTotal` = sum of the `CHARGED` ones. Pending, waived and failed ones do not count. A penalty never changes `finalCost` or the owner's payout. |
 | Closing | The ticket cannot be closed while one of its penalties is `PENDING` (`409 PENALTY_PENDING`). |
 | Audit | `SUPPORT_ASSESS_PENALTY`, `SUPPORT_CHARGE_PENALTY_ASSESSED`, `SUPPORT_WAIVE_PENALTY_ASSESSED` with `penaltyId`, `amountMinor`, `targetUserId`, `penaltyState`, `paymentStatus`. |
@@ -110,6 +111,20 @@ Fee payments, amounts and totals (this is why a command can succeed while the pa
 
 **"Waive penalty" means two different commands.** `settle-penalty` with `waive: true` waives the **held overstay** penalty;
 `penalties/{id}/waive` waives an **assessed** one. Neither touches the other.
+
+### 3.3 Refund of a charged overstay penalty (PARI-100)
+
+| | |
+|---|---|
+| Endpoint | `POST /api/support/tickets/{id}/commands/refund-overstay-penalty`, body `reason` (not blank) and `operationId` (1 to 100 characters). SUPPORT or ADMIN; the ticket must be open and belong to the reservation. Returns the updated `TicketView`. |
+| What is refunded | The successful automatic `PENALTY` payment of the reservation, **in full** (the payment that does not belong to a penalty support assessed). The ledger gets a new `REFUND` payment; nothing is overwritten. |
+| States | `overstayPenalty.state` is `NONE`, `PENDING` (held), `CHARGED`, `FAILED`, `WAIVED` or `REFUNDED`. Only `CHARGED` can be refunded. Otherwise `409 OVERSTAY_PENALTY_NOT_CHARGED` with `details.state`; after a refund `409 OVERSTAY_PENALTY_ALREADY_REFUNDED`. A held penalty is decided with `settle-penalty`. |
+| Totals | `overstayPenalty` and `finalCost` keep the billed amount; the owner's payout is not changed. The refund is shown in `overstayPenalty` (`amount`, `state`, `refundedAmount`, `refundedAt`, `netAmount`), in `TicketView` and in `SupportReservationView`. |
+| Idempotency | The same `operationId` on the same ticket returns the ticket unchanged. The reservation row is locked during the command and the refund payment is stored with a unique key, so requests at the same moment refund once (tested with parallel transactions). |
+| Payment refused | `402 PAYMENT_FAILED`; the command is rolled back (no refund, no marker, no audit entry). |
+| Audit | `SUPPORT_REFUND_OVERSTAY_PENALTY` with the reason, `amountMinor`, `operationId`, `refundPaymentId`, `targetUserId`. |
+| Notification | The driver gets an in-app `OVERSTAY_PENALTY_REFUNDED` notification (amount, reservation, ticket). The owner is not notified. |
+| Not covered | Partial refunds, refunding a `FAILED` penalty (nothing was collected) and an assessed penalty. |
 
 ## 4. Warnings, blocking and unblocking
 
@@ -142,6 +157,7 @@ writes one audit entry `SUPPORT_<COMMAND>` (a failed command writes nothing).
 | Release | `commands/release` | The ticket is assigned | Unassigned, `OPEN`, messages and resolution kept | `409 INVALID_STATE` when unassigned |
 | Force check-out | `commands/force-check-out` | Reservation `IN_PROGRESS` | `COMPLETED`; an overstay penalty is charged (or held, see 3.1); spot released | `409 INVALID_STATE` when not running |
 | Settle held penalty | `commands/settle-penalty` (`waive`, `reason`) | A held overstay penalty | Waived, or charged now | `409 INVALID_STATE` when none is held |
+| Refund charged overstay penalty | `commands/refund-overstay-penalty` (`reason`, `operationId`) | Overstay penalty `CHARGED` (section 3.3) | Full `REFUND` payment; `overstayPenalty.state` `REFUNDED`; driver notified | `409 OVERSTAY_PENALTY_NOT_CHARGED`, `409 OVERSTAY_PENALTY_ALREADY_REFUNDED`, `402 PAYMENT_FAILED` |
 | Cancel reservation and refund | `commands/cancel-with-refund` | `PENDING_PAYMENT`, `PENDING_APPROVAL` or `CONFIRMED` | `CANCELLED`, full refund, driver and owner notified | `409 INVALID_STATE`; `402` when the refund is refused |
 | Correct a no-show | `commands/correct-no-show` | `NO_SHOW` | `CANCELLED`, full refund | `409 INVALID_STATE` |
 | Warn / block / unblock | `commands/sanction` (`userId`, `type`, `reason`) | See section 4 | See section 4 | See section 4 |
@@ -164,11 +180,11 @@ The generated list of every endpoint, field and type is [api-reference.md](api-r
 moderation*). The contract is produced by springdoc from the controllers and DTO records, so it cannot differ from the code; the
 behaviour above is what the fields do. Request records (`SupportController`, `TicketController`): `CreateTicketRequest`,
 `MessageRequest`, `NoteRequest`, `ReasonRequest`, `SettlePenaltyRequest`, `SanctionRequest`, `ReassignRequest`, `EvacuationRequest`,
-`EvacuationStatusRequest`, `EvacuationFeeRequest`, `AssessPenaltyRequest`, `EvacuationFeeItemRequest`. Responses: `TicketView` (with
-`penalties`, `penaltyTotal`, `evacuationFees`, `evacuationFeeTotal`), `SupportReservationView`, `AuditEventView.Page`, `StaffView`,
+`EvacuationStatusRequest`, `EvacuationFeeRequest`, `AssessPenaltyRequest`, `EvacuationFeeItemRequest`, `RefundOverstayPenaltyRequest`. Responses: `TicketView` (with
+`penalties`, `penaltyTotal`, `evacuationFees`, `evacuationFeeTotal`, `overstayPenalty`), `SupportReservationView`, `AuditEventView.Page`, `StaffView`,
 `ModerationService.ModerationView` and `BlockedUserView`.
 
-Idempotency in one place: assessing a penalty and adding an evacuation fee are idempotent per `operationId` (per ticket); the charge of
+Idempotency in one place: assessing a penalty, adding an evacuation fee and refunding the overstay penalty are idempotent per `operationId` (per ticket); the charge of
 a penalty is derived from the penalty id, so it happens once; the automatic fee on `DONE` has a fixed key; the system ticket is created
 once per reservation; a support reply notification is created once per reply. Every other command is not idempotent: repeating it
 either changes the state again or is refused with `409`.
@@ -183,7 +199,7 @@ These are **not decided** by the project; the code does what is written above, a
 4. Should an owner be a possible target of a penalty? Today only the driver (the payer) can be.
 5. Is there a maximum penalty amount and a maximum evacuation fee? Values for `evacuation_fee` (0.00), `warning_limit` (3) and
    `overstay_penalty_multiplier` (1.50) are placeholders from the migrations.
-6. Should a `CHARGED` penalty be refundable, should a `FAILED` fee or penalty be retryable, and should drivers be notified of
+6. Should a `CHARGED` **assessed** penalty be refundable (the automatic overstay penalty is, since PARI-100), should a `FAILED` fee or penalty be retryable, and should drivers be notified of
    penalties, fees and sanctions?
 7. Should `DONE` evacuation also end the session, release the spot or close the ticket?
 8. Should "waive penalty" be a single action in the UI for both the overstay and the assessed penalty?

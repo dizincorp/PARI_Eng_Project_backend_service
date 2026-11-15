@@ -1,5 +1,8 @@
 package pl.pollub.pari.support.service;
 
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
+import org.hibernate.Hibernate;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -52,11 +55,14 @@ public class SupportCommandService {
     private final PenaltyAssessmentRepository penalties;
     private final EvacuationFeeRepository evacuationFees;
     private final PaymentService paymentService;
+    private final EntityManager entityManager;
 
     public SupportCommandService(SupportTicketService ticketService, ReservationService reservationService, UserRepository users,
                                  ModerationService moderation, AuditTrail audit, PlatformSettings settings, Clock clock,
                                  ApplicationEventPublisher events, PenaltyAssessmentRepository penalties,
-                                 EvacuationFeeRepository evacuationFees, PaymentService paymentService) {
+                                 EvacuationFeeRepository evacuationFees, PaymentService paymentService,
+                                 EntityManager entityManager) {
+        this.entityManager = entityManager;
         this.penalties = penalties;
         this.evacuationFees = evacuationFees;
         this.paymentService = paymentService;
@@ -253,6 +259,54 @@ public class SupportCommandService {
         penalty.waive(users.getReferenceById(supportId), reason, clock.instant());
         penalties.saveAndFlush(penalty);
         return done(supportId, ticket, "WAIVE_PENALTY_ASSESSED", reason, penaltyData(penalty));
+    }
+
+    // ---- refund of the automatic overstay penalty (PARI-100)
+
+    /**
+     * Returns the charged automatic overstay penalty to the driver, in full, through the payment ledger (a REFUND payment is
+     * added; nothing is overwritten). Allowed only when that penalty was collected (state CHARGED): otherwise 409
+     * OVERSTAY_PENALTY_NOT_CHARGED with {@code details.state}, or 409 OVERSTAY_PENALTY_ALREADY_REFUNDED. A held penalty is
+     * decided with settle-penalty. Penalties support assessed are not touched. The billed amounts on the reservation stay as
+     * they were; the refund is shown in {@code overstayPenalty}. {@code operationId} identifies the request: the same one again
+     * returns the ticket unchanged. The reservation row is locked, so two requests at once cannot refund twice. A refused
+     * refund is 402 PAYMENT_FAILED and leaves nothing behind.
+     */
+    @Transactional
+    public TicketView refundOverstayPenalty(UUID supportId, UUID ticketId, String reason, String operationId) {
+        Report ticket = begin(supportId, ticketId, reason);
+        String key = operationKey("refund-overstay-penalty", ticketId, operationId);
+        Reservation reservation = lockReservation(ticket);
+        if (key.equals(reservation.getOverstayRefundOperationKey())) {
+            return TicketView.of(ticket, true);
+        }
+        OverstayPenaltyView.State state = OverstayPenaltyView.stateOf(reservation);
+        if (state == OverstayPenaltyView.State.REFUNDED) {
+            throw new ConflictException("OVERSTAY_PENALTY_ALREADY_REFUNDED", "The overstay penalty was already refunded");
+        }
+        if (state != OverstayPenaltyView.State.CHARGED) {
+            throw new ConflictException("OVERSTAY_PENALTY_NOT_CHARGED",
+                    "Only a charged overstay penalty can be refunded; this one is " + state,
+                    Map.of("state", state.name()));
+        }
+        Payment charged = OverstayPenaltyView.chargedPayment(reservation).orElseThrow();
+        Payment refund = paymentService.refundPayment(charged);
+        reservation.recordOverstayRefund(refund, key, clock.instant());
+        Map<String, Object> extra = new java.util.HashMap<>();
+        extra.put("amountMinor", refund.getAmount().amountMinor());
+        extra.put("operationId", operationId.trim());
+        extra.put("refundPaymentId", refund.getId().toString());
+        extra.put("targetUserId", reservation.getDriver().getId().toString());
+        TicketView view = done(supportId, ticket, "REFUND_OVERSTAY_PENALTY", reason, extra);
+        events.publishEvent(TicketEvent.of(TicketEvent.Type.OVERSTAY_PENALTY_REFUNDED, ticket, refund.getAmount().toDecimal().toPlainString()));
+        return view;
+    }
+
+    /** Locks the reservation row and reloads it, so a second request waits and then sees the refund of the first. */
+    private Reservation lockReservation(Report ticket) {
+        Reservation reservation = (Reservation) Hibernate.unproxy(ticket.getReservation());
+        entityManager.refresh(reservation, LockModeType.PESSIMISTIC_WRITE);
+        return reservation;
     }
 
     // ---- itemized evacuation fees (PARI-88)
