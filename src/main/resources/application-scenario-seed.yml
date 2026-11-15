@@ -1,0 +1,9 @@
+# Scenario seed for local development (PARI-94): SPRING_PROFILES_ACTIVE=local,scenario-seed
+# Creates a Lublin data set (accounts, listings, blocks, reservations in every state, support tickets) relative to the
+# current time, and ends the overdue sessions with the real automatic check-out. It refuses to run unless the profile
+# `local` or `test` is active and the database is on this machine (see SeedGuard). Switch it off by not using this
+# profile or by setting pari.seed.enabled=false. Passwords: PARI_SEED_PASSWORD (and PARI_SEED_ADMIN_PASSWORD,
+# PARI_SEED_SUPPORT_PASSWORD); the local default is in docs/seed-data.md.
+pari:
+  seed:
+    enabled: true
