@@ -9,6 +9,7 @@ Where documents live and how to keep them correct.
 | Project design document (requirements F01-F25, NF01-NF15, diagrams, UI) | Polish `.docx`/`.pdf` in the shared Google Drive folder *Eng Project PARI* | **Authoritative.** When another document disagrees, this one wins. |
 | Team documents: project plan (English), technology stack, data model, class diagram, API endpoint list | Confluence space *My Software Team*, under *PARI project documentation* | Working copies for daily use. |
 | System documentation (what exists today) | [backend-concepts.md](backend-concepts.md), [data-layer.md](data-layer.md), [frontend-backend-interaction.md](frontend-backend-interaction.md) | English, describes the code on `main`; planned parts are marked *planned*. |
+| Support workflows (tickets, evacuation, penalties, warnings and blocks, support actions) | [support-workflows.md](support-workflows.md) | Verified against the code and tests; lists the open decisions. |
 | Generated reference | [data-dictionary.md](data-dictionary.md) (tables, columns, constraints), [api-reference.md](api-reference.md) (every endpoint and schema) | Produced from the running application by the scripts in [tools/](tools); regenerate, do not edit by hand. |
 | Diagrams as code | [diagrams/](diagrams) (Mermaid, rendered by GitHub) | Same diagrams as in Confluence; `erd-backend.md` is generated. |
 | Architecture decision records | [adr/](adr) | Short, one decision per file. |
