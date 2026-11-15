@@ -158,6 +158,46 @@ class SupportControllerTest {
     }
 
     @Test
+    void refundingAnOverstayPenaltyNeedsAReasonAndAnOperationId() throws Exception {
+        String url = "/api/support/tickets/" + TICKET + "/commands/refund-overstay-penalty";
+        for (String body : List.of("{\"reason\":\"r\"}", "{\"operationId\":\"op\"}", "{\"reason\":\" \",\"operationId\":\"op\"}",
+                "{\"reason\":\"r\",\"operationId\":\"\"}", "{\"reason\":\"r\",\"operationId\":\"" + "x".repeat(101) + "\"}")) {
+            mvc.perform(post(url).header("X-User-Id", SUPPORT).contentType(MediaType.APPLICATION_JSON).content(body))
+                    .andExpect(status().isBadRequest());
+        }
+        verifyNoInteractions(commands);
+    }
+
+    @Test
+    void refundingAnOverstayPenaltyPassesTheCallerAndAnswersWithTheStableErrorCodes() throws Exception {
+        String url = "/api/support/tickets/" + TICKET + "/commands/refund-overstay-penalty";
+        String body = "{\"reason\":\"Driver was blocked in\",\"operationId\":\"op-1\"}";
+
+        mvc.perform(post(url).header("X-User-Id", SUPPORT).contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isOk());
+        verify(commands).refundOverstayPenalty(SUPPORT, TICKET, "Driver was blocked in", "op-1");
+
+        org.mockito.Mockito.doThrow(new ConflictException(
+                "OVERSTAY_PENALTY_NOT_CHARGED", "Only a charged overstay penalty can be refunded", java.util.Map.of("state", "PENDING")))
+                .when(commands).refundOverstayPenalty(any(), any(), any(), any());
+        mvc.perform(post(url).header("X-User-Id", SUPPORT).contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.errorCode").value("OVERSTAY_PENALTY_NOT_CHARGED"))
+                .andExpect(jsonPath("$.details.state").value("PENDING"));
+
+        org.mockito.Mockito.doThrow(new pl.pollub.pari.payment.service.PaymentFailedException("Refund failed"))
+                .when(commands).refundOverstayPenalty(any(), any(), any(), any());
+        mvc.perform(post(url).header("X-User-Id", SUPPORT).contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isPaymentRequired())
+                .andExpect(jsonPath("$.errorCode").value("PAYMENT_FAILED"));
+
+        org.mockito.Mockito.doThrow(new ForbiddenException("The SUPPORT role is required"))
+                .when(commands).refundOverstayPenalty(any(), any(), any(), any());
+        mvc.perform(post(url).header("X-User-Id", UUID.randomUUID()).contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
     void theSupportEndpointsNeedAuthentication() throws Exception {
         mvc.perform(get("/api/support/tickets/staff")).andExpect(status().isUnauthorized());
         mvc.perform(get("/api/support/users/blocked")).andExpect(status().isUnauthorized());

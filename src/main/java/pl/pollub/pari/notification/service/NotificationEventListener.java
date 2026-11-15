@@ -108,6 +108,13 @@ public class NotificationEventListener {
                 notifications.save(new Notification(users.getReferenceById(e.ownerId()), "EVACUATION", "Ewakuacja pojazdu",
                         body, data, NotificationChannel.IN_APP));
             }
+            case OVERSTAY_PENALTY_REFUNDED -> {
+                data.put("amount", e.detail());
+                notifications.save(new Notification(users.getReferenceById(e.driverId()), "OVERSTAY_PENALTY_REFUNDED",
+                        "Zwrot dopłaty za przekroczenie czasu",
+                        "Zwróciliśmy dopłatę " + e.detail() + " PLN za przekroczenie czasu postoju na miejscu " + place
+                                + " (" + e.reservationCode() + ").", data, NotificationChannel.IN_APP));
+            }
             case EVACUATION_UPDATED -> {
                 String body = "Status ewakuacji pojazdu z miejsca " + place + " (" + e.reservationCode() + "): " + e.detail() + ".";
                 notifications.save(new Notification(users.getReferenceById(e.driverId()), "EVACUATION", "Ewakuacja pojazdu",

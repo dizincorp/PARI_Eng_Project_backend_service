@@ -15,7 +15,9 @@ public record TicketEvent(Type type, UUID ticketId, TicketType ticketType, UUID 
         /** An evacuation was requested; {@code detail} is the destination. */
         EVACUATION_REQUESTED,
         /** The evacuation status changed; {@code detail} is the new status. */
-        EVACUATION_UPDATED
+        EVACUATION_UPDATED,
+        /** Support refunded the automatic overstay penalty (PARI-100); {@code detail} is the amount in PLN. */
+        OVERSTAY_PENALTY_REFUNDED
     }
 
     public static TicketEvent of(Type type, Report t, String detail) {
