@@ -885,6 +885,8 @@ The legacy `PS_META` marker that the frontend wrote into the space description i
 
 Drivers and owners use `/api/tickets` (open a ticket for a reservation, list, read, write a message). The support page uses `/api/support/...`; every endpoint there needs the `SUPPORT` or `ADMIN` role (403 otherwise, 401 without a token).
 
+**Who can open which ticket (PARI-93).** `POST /api/tickets` is for the driver or the owner of the reservation only (404 for anyone else, also SUPPORT and ADMIN). `VEHICLE_NOT_LEFT`: owner only, from the reserved end (409 `TICKET_TOO_EARLY`), while the reservation is `IN_PROGRESS` **or `COMPLETED`** (an ended session, also an automatic check-out), otherwise 409 `SESSION_NOT_RUNNING`; one open ticket per reservation (409 `TICKET_ALREADY_OPEN`). `CANNOT_LEAVE`: driver only, only while `IN_PROGRESS`. `OTHER`: either participant, any status. The full rules, the evacuation, penalty and moderation behaviour, and the open decisions are in [support-workflows.md](support-workflows.md).
+
 | Endpoint | What it does |
 |---|---|
 | `GET /api/support/tickets` | The shared queue: high priority first, then the oldest. Filters: `status`, `type`, `priority`, `unassigned`, `page`, `size`. |

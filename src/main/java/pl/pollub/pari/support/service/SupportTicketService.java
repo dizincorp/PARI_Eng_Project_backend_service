@@ -66,7 +66,8 @@ public class SupportTicketService {
     }
 
     /**
-     * The owner reports "vehicle still on my spot" (from the reserved end, while the session runs), the driver "I can't
+     * The owner reports "vehicle still on my spot" (from the reserved end, while the session runs or after it was completed;
+     * not for upcoming, cancelled, rejected, expired or no-show reservations), the driver "I can't
      * leave" (while the session runs), or either reports OTHER at any time. One open VEHICLE_NOT_LEFT ticket per reservation.
      */
     @Transactional
@@ -93,7 +94,10 @@ public class SupportTicketService {
                     throw new ConflictException("TICKET_TOO_EARLY", "This ticket can be opened from the end of the reservation",
                             Map.of("availableAt", reservation.getPeriod().end()));
                 }
-                if (reservation.getStatus() != ReservationStatus.IN_PROGRESS) {
+                // IN_PROGRESS: the vehicle is still checked in. COMPLETED: the session was ended (manually or by the
+                // automatic check-out) but the vehicle may still stand there; the ticket is then only a support record (PARI-93).
+                if (reservation.getStatus() != ReservationStatus.IN_PROGRESS
+                        && reservation.getStatus() != ReservationStatus.COMPLETED) {
                     throw new ConflictException("SESSION_NOT_RUNNING", "The parking session is not running");
                 }
                 if (hasOpen(reservationId, type)) {
