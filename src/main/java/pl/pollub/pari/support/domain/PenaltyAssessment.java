@@ -70,6 +70,22 @@ public class PenaltyAssessment extends BaseEntity {
     @Column(columnDefinition = "text")
     private String decisionReason;
 
+    /** The REFUND payment that returned the charged amount (PARI-101); null while it was not refunded. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "refund_payment_id")
+    private Payment refundPayment;
+
+    private String refundOperationKey;
+
+    private Instant refundedAt;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "refunded_by")
+    private User refundedBy;
+
+    @Column(columnDefinition = "text")
+    private String refundReason;
+
     protected PenaltyAssessment() {
     }
 
@@ -92,6 +108,22 @@ public class PenaltyAssessment extends BaseEntity {
         this.payment = payment;
         this.state = payment.getStatus() == PaymentStatus.SUCCEEDED ? PenaltyState.CHARGED : PenaltyState.FAILED;
         decide(by, why, now);
+    }
+
+    /**
+     * Support returned a charged penalty (PARI-101). Only a CHARGED penalty can be refunded, once. The amount, the charge
+     * payment and the decision stay as they were; the refund is recorded next to them.
+     */
+    public void refund(Payment refund, User by, String why, String operationKey, Instant now) {
+        if (state != PenaltyState.CHARGED) {
+            throw new IllegalStateTransitionException("Penalty", state, "be refunded");
+        }
+        this.state = PenaltyState.REFUNDED;
+        this.refundPayment = refund;
+        this.refundOperationKey = operationKey;
+        this.refundedBy = by;
+        this.refundReason = why;
+        this.refundedAt = now;
     }
 
     public void waive(User by, String why, Instant now) {

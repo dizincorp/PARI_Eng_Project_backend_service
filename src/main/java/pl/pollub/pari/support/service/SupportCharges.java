@@ -19,9 +19,14 @@ public final class SupportCharges {
     private SupportCharges() {
     }
 
-    /** A penalty support assessed. {@code state} is PENDING, CHARGED, WAIVED or FAILED; amounts are PLN decimals. */
+    /**
+     * A penalty support assessed. {@code state} is PENDING, CHARGED, WAIVED, FAILED or REFUNDED; amounts are PLN decimals.
+     * {@code amount} is always the amount that was assessed; {@code refundedAmount}, {@code refundedAt} and
+     * {@code refundReason} are set only for REFUNDED (PARI-101).
+     */
     public record PenaltyItem(UUID id, UUID ticketId, UUID targetUserId, BigDecimal amount, String currency, String reason,
-                              PenaltyState state, Instant createdAt, Instant decidedAt, String decisionReason) {
+                              PenaltyState state, Instant createdAt, Instant decidedAt, String decisionReason,
+                              BigDecimal refundedAmount, Instant refundedAt, String refundReason) {
     }
 
     /** One evacuation charge ({@code kind} FEE) or the full reversal of one ({@code kind} REFUND, {@code refundsFeeId} set). */
@@ -32,10 +37,12 @@ public final class SupportCharges {
     public static List<PenaltyItem> penalties(Reservation r) {
         return r.getSupportPenalties().stream().map(p -> new PenaltyItem(p.getId(), p.getTicket().getId(), p.getTarget().getId(),
                 p.getAmount().toDecimal(), p.getAmount().currency(), p.getReason(), p.getState(), p.getCreatedAt(),
-                p.getDecidedAt(), p.getDecisionReason())).toList();
+                p.getDecidedAt(), p.getDecisionReason(),
+                p.getState() == PenaltyState.REFUNDED ? p.getRefundPayment().getAmount().toDecimal() : null,
+                p.getRefundedAt(), p.getRefundReason())).toList();
     }
 
-    /** Sum of the support penalties that were actually collected. Pending, waived and failed ones do not count. */
+    /** Sum of the support penalties that were collected and kept. Pending, waived, failed and refunded ones do not count. */
     public static BigDecimal penaltyTotal(Reservation r) {
         long minor = r.getSupportPenalties().stream().filter(p -> p.getState() == PenaltyState.CHARGED)
                 .mapToLong(p -> p.getAmount().amountMinor()).sum();
