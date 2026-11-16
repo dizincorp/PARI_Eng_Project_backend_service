@@ -9,5 +9,7 @@ public enum PenaltyState {
     /** Support decided not to collect it. */
     WAIVED,
     /** Collection was attempted and the provider (or the missing payment method) refused. */
-    FAILED
+    FAILED,
+    /** Charged, then returned to the driver in full by support (PARI-101). The amount and the charge are kept. */
+    REFUNDED
 }

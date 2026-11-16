@@ -198,6 +198,51 @@ class SupportControllerTest {
     }
 
     @Test
+    void refundingAPenaltyNeedsAReasonAndAnOperationId() throws Exception {
+        String url = "/api/support/tickets/" + TICKET + "/penalties/" + UUID.randomUUID() + "/refund";
+        for (String body : List.of("{\"reason\":\"r\"}", "{\"operationId\":\"op\"}", "{\"reason\":\" \",\"operationId\":\"op\"}",
+                "{\"reason\":\"r\",\"operationId\":\"\"}", "{\"reason\":\"r\",\"operationId\":\"" + "x".repeat(101) + "\"}")) {
+            mvc.perform(post(url).header("X-User-Id", SUPPORT).contentType(MediaType.APPLICATION_JSON).content(body))
+                    .andExpect(status().isBadRequest());
+        }
+        verifyNoInteractions(commands);
+    }
+
+    @Test
+    void refundingAPenaltyPassesTheCallerAndAnswersWithTheStableErrorCodes() throws Exception {
+        UUID penalty = UUID.randomUUID();
+        String url = "/api/support/tickets/" + TICKET + "/penalties/" + penalty + "/refund";
+        String body = "{\"reason\":\"Charged by mistake\",\"operationId\":\"op-1\"}";
+
+        mvc.perform(post(url).header("X-User-Id", SUPPORT).contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isOk());
+        verify(commands).refundAssessedPenalty(SUPPORT, TICKET, penalty, "Charged by mistake", "op-1");
+
+        org.mockito.Mockito.doThrow(new ConflictException("PENALTY_NOT_CHARGED", "Only a charged penalty can be refunded",
+                java.util.Map.of("state", "PENDING"))).when(commands).refundAssessedPenalty(any(), any(), any(), any(), any());
+        mvc.perform(post(url).header("X-User-Id", SUPPORT).contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.errorCode").value("PENALTY_NOT_CHARGED"))
+                .andExpect(jsonPath("$.details.state").value("PENDING"));
+
+        org.mockito.Mockito.doThrow(new pl.pollub.pari.payment.service.PaymentFailedException("Refund failed"))
+                .when(commands).refundAssessedPenalty(any(), any(), any(), any(), any());
+        mvc.perform(post(url).header("X-User-Id", SUPPORT).contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isPaymentRequired())
+                .andExpect(jsonPath("$.errorCode").value("PAYMENT_FAILED"));
+
+        org.mockito.Mockito.doThrow(new pl.pollub.pari.common.exception.NotFoundException("Penalty not found"))
+                .when(commands).refundAssessedPenalty(any(), any(), any(), any(), any());
+        mvc.perform(post(url).header("X-User-Id", SUPPORT).contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isNotFound());
+
+        org.mockito.Mockito.doThrow(new ForbiddenException("The SUPPORT role is required"))
+                .when(commands).refundAssessedPenalty(any(), any(), any(), any(), any());
+        mvc.perform(post(url).header("X-User-Id", UUID.randomUUID()).contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
     void theSupportEndpointsNeedAuthentication() throws Exception {
         mvc.perform(get("/api/support/tickets/staff")).andExpect(status().isUnauthorized());
         mvc.perform(get("/api/support/users/blocked")).andExpect(status().isUnauthorized());

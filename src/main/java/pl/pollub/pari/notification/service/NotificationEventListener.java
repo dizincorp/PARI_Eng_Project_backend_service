@@ -108,6 +108,12 @@ public class NotificationEventListener {
                 notifications.save(new Notification(users.getReferenceById(e.ownerId()), "EVACUATION", "Ewakuacja pojazdu",
                         body, data, NotificationChannel.IN_APP));
             }
+            case PENALTY_REFUNDED -> {
+                data.put("amount", e.detail());
+                notifications.save(new Notification(users.getReferenceById(e.driverId()), "PENALTY_REFUNDED", "Zwrot kary",
+                        "Zwróciliśmy karę " + e.detail() + " PLN naliczoną przez wsparcie dla rezerwacji " + e.reservationCode()
+                                + " miejsca " + place + ".", data, NotificationChannel.IN_APP));
+            }
             case OVERSTAY_PENALTY_REFUNDED -> {
                 data.put("amount", e.detail());
                 notifications.save(new Notification(users.getReferenceById(e.driverId()), "OVERSTAY_PENALTY_REFUNDED",

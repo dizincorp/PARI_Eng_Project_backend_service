@@ -68,6 +68,10 @@ public class SupportController {
                                                @NotBlank @jakarta.validation.constraints.Size(max = 100) String operationId) {
     }
 
+    public record RefundPenaltyRequest(@NotBlank String reason,
+                                       @NotBlank @jakarta.validation.constraints.Size(max = 100) String operationId) {
+    }
+
     public record NoteRequest(@NotBlank String body, boolean internalNote) {
     }
 
@@ -238,6 +242,18 @@ public class SupportController {
     public TicketView waivePenalty(@CurrentUserId UUID userId, @PathVariable UUID id, @PathVariable UUID penaltyId,
                                    @Valid @RequestBody ReasonRequest r) {
         return commands.waiveAssessedPenalty(userId, id, penaltyId, r.reason());
+    }
+
+    /**
+     * Returns a CHARGED penalty that support assessed, in full (PARI-101); it becomes REFUNDED and keeps its amount.
+     * {@code operationId} is the idempotency key. 409 PENALTY_NOT_CHARGED (details.state), 409 PENALTY_ALREADY_REFUNDED,
+     * 404 for a penalty of another ticket, 402 PAYMENT_FAILED. Not for the automatic overstay penalty
+     * (see refund-overstay-penalty) and not for evacuation fees.
+     */
+    @PostMapping("/tickets/{id}/penalties/{penaltyId}/refund")
+    public TicketView refundPenalty(@CurrentUserId UUID userId, @PathVariable UUID id, @PathVariable UUID penaltyId,
+                                    @Valid @RequestBody RefundPenaltyRequest r) {
+        return commands.refundAssessedPenalty(userId, id, penaltyId, r.reason(), r.operationId());
     }
 
     /** Adds and charges one more evacuation fee (PARI-88); the earlier ones are kept. */

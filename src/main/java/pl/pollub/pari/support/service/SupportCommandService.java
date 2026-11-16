@@ -250,6 +250,41 @@ public class SupportCommandService {
         return done(supportId, ticket, "CHARGE_PENALTY_ASSESSED", reason, extra);
     }
 
+    /**
+     * Returns a CHARGED penalty to the driver in full (PARI-101) through the payment ledger (a REFUND payment is added) and
+     * marks it REFUNDED; its amount and charge stay on record. Only a penalty of this ticket that is CHARGED qualifies:
+     * otherwise 409 PENALTY_NOT_CHARGED with {@code details.state}, or 409 PENALTY_ALREADY_REFUNDED. The automatic overstay
+     * penalty and evacuation fees have their own commands. {@code operationId} makes a retry harmless; the penalty row is
+     * locked, so requests at the same moment refund once. A refused refund is 402 PAYMENT_FAILED and leaves nothing behind.
+     */
+    @Transactional
+    public TicketView refundAssessedPenalty(UUID supportId, UUID ticketId, UUID penaltyId, String reason, String operationId) {
+        Report ticket = begin(supportId, ticketId, reason);
+        String key = operationKey("refund-penalty", ticketId, operationId);
+        PenaltyAssessment penalty = loadPenalty(ticket, penaltyId);
+        entityManager.refresh(penalty, LockModeType.PESSIMISTIC_WRITE);
+        if (key.equals(penalty.getRefundOperationKey())) {
+            return TicketView.of(ticket, true);
+        }
+        if (penalty.getState() == PenaltyState.REFUNDED) {
+            throw new ConflictException("PENALTY_ALREADY_REFUNDED", "This penalty was already refunded");
+        }
+        if (penalty.getState() != PenaltyState.CHARGED) {
+            throw new ConflictException("PENALTY_NOT_CHARGED",
+                    "Only a charged penalty can be refunded; this one is " + penalty.getState(),
+                    Map.of("state", penalty.getState().name()));
+        }
+        Payment refund = paymentService.refundPayment(penalty.getPayment());
+        penalty.refund(refund, users.getReferenceById(supportId), reason, key, clock.instant());
+        penalties.saveAndFlush(penalty);
+        Map<String, Object> extra = penaltyData(penalty);
+        extra.put("operationId", operationId.trim());
+        extra.put("refundPaymentId", refund.getId().toString());
+        TicketView view = done(supportId, ticket, "REFUND_PENALTY_ASSESSED", reason, extra);
+        events.publishEvent(TicketEvent.of(TicketEvent.Type.PENALTY_REFUNDED, ticket, refund.getAmount().toDecimal().toPlainString()));
+        return view;
+    }
+
     /** Waives a penalty; only possible while it is PENDING. */
     @Transactional
     public TicketView waiveAssessedPenalty(UUID supportId, UUID ticketId, UUID penaltyId, String reason) {
